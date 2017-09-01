@@ -36,6 +36,7 @@
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v120_xp</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -146,9 +147,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CommonHeader.h" />
+    <ClInclude Include="CryptyHeader.h" />
     <ClInclude Include="ListCtrlData.h" />
+    <ClInclude Include="MemoryHeader.h" />
     <ClInclude Include="SystemDataInfo.h" />
     <ClInclude Include="UNDOCAPI.h" />
+    <ClInclude Include="WindowHeader.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

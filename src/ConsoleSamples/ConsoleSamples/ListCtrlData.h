@@ -6,7 +6,7 @@
 #include <string>
 
 
-__inline static void Get_List_Data(DWORD dwPID, DWORD dwWndID)
+__inline static void Init_List_Data(DWORD dwPID, DWORD dwWndID)
 {
 
 #define BASE_ITEM_SIZE 0x200 //512
@@ -39,12 +39,13 @@ __inline static void Get_List_Data(DWORD dwPID, DWORD dwWndID)
 	dwColCount = ::SendMessage(hWndHeader, HDM_GETITEMCOUNT, 0, 0);
 
 	//打开并插入进程
-	hProcess = ::OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION, FALSE, ProcessID);
+	hProcess = ::OpenProcess(PROCESS_ALL_ACCESS | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION, FALSE, ProcessID);
 	if (!hProcess)
 	{
 		_tprintf(_T("OpenProcess() failed! ErrorId=%d\r\n"), GetLastError());
 		goto __LEAVE_CLEAN__;
 	}
+
 	//申请代码的内存区
 	plvi = (LVITEM *)::VirtualAllocEx(hProcess, NULL, sizeof(LVITEM), MEM_COMMIT, PAGE_READWRITE);
 	if (!plvi)
@@ -100,7 +101,7 @@ __LEAVE_CLEAN__:
 		hProcess = NULL;
 	}
 }
-__inline static void ShowListCtrlData()
+__inline static void GetListCtrlData()
 {
 	DWORD dwProcessID = 0;
 	//获取桌面窗口句柄
@@ -113,9 +114,9 @@ __inline static void ShowListCtrlData()
 	//进程界面窗口的句柄,通过SPY获取
 	HWND hWndListview = (HWND)::FindWindowEx(hWndToolBox, 0, _T("SysListView32"), NULL);
 	DWORD dwThreadID = GetWindowThreadProcessId(hWndListview, &dwProcessID);
-	Get_List_Data(dwProcessID, (DWORD)hWndListview);
+	Init_List_Data(dwProcessID, (DWORD)hWndListview);
 }
-__inline static int ShowListCtrlDataEx(HWND hWndListCtrl)
+__inline static int GetListCtrlDataEx(HWND hWndListCtrl)
 {
 	{
 		int i = 0;
@@ -136,7 +137,7 @@ __inline static int ShowListCtrlDataEx(HWND hWndListCtrl)
 			PostMessage((hHeaderWnd), HDM_GETITEM, (WPARAM)(int)(i), (LPARAM)(HD_ITEM *)(&hdi));
 			if (*tText)
 			{
-				_tprintf(_T("%d: [%s]\r\n"), tText);
+				_tprintf(_T("%d: [%s]\r\n"), i, tText);
 			}
 		}
 		_tprintf(_T("==================================\r\n"));
@@ -150,7 +151,7 @@ __inline static int ShowListCtrlDataEx(HWND hWndListCtrl)
 			ListView_GetItem(hListWnd, &lvi);
 			if (*tText)
 			{
-				_tprintf(_T("%d: [%s]\r\n"), tText);
+				_tprintf(_T("%d: [%s]\r\n"), i, tText);
 			}
 		}
 	}

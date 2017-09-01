@@ -26,23 +26,32 @@ __inline static void GetComputerInfo()
 	// Get and display the name of the computer. 
 	bufCharCount = INFO_BUFFER_SIZE;
 	if (!GetComputerName(infoBuf, &bufCharCount))
-		printError(TEXT("GetComputerName"));
+	{
+		_tprintf(TEXT("GetComputerName(error=%s)\r\n"), PPSHUAI::ParseError(GetLastError()).c_str());
+	}
+	
 	_tprintf(TEXT("\nComputer name:      %s"), infoBuf);
 
 	// Get and display the user name. 
 	bufCharCount = INFO_BUFFER_SIZE;
 	if (!GetUserName(infoBuf, &bufCharCount))
-		printError(TEXT("GetUserName"));
+	{
+		_tprintf(TEXT("GetUserName(error=%s)\r\n"), PPSHUAI::ParseError(GetLastError()).c_str());
+	}
 	_tprintf(TEXT("\nUser name:          %s"), infoBuf);
 
 	// Get and display the system directory. 
 	if (!GetSystemDirectory(infoBuf, INFO_BUFFER_SIZE))
-		printError(TEXT("GetSystemDirectory"));
+	{
+		_tprintf(TEXT("GetSystemDirectory(error=%s)\r\n"), PPSHUAI::ParseError(GetLastError()).c_str());
+	}
 	_tprintf(TEXT("\nSystem Directory:   %s"), infoBuf);
 
 	// Get and display the Windows directory. 
 	if (!GetWindowsDirectory(infoBuf, INFO_BUFFER_SIZE))
-		printError(TEXT("GetWindowsDirectory"));
+	{
+		_tprintf(TEXT("GetWindowsDirectory(error=%s)\r\n"), PPSHUAI::ParseError(GetLastError()).c_str());
+	}
 	_tprintf(TEXT("\nWindows Directory:  %s"), infoBuf);
 
 	// Expand and display a few environment variables. 
@@ -55,7 +64,9 @@ __inline static void GetComputerInfo()
 			_tprintf(TEXT("\n\t(Buffer too small to expand: \"%s\")"),
 			envVarStrings[i]);
 		else if (!bufCharCount)
-			printError(TEXT("ExpandEnvironmentStrings"));
+		{
+			_tprintf(TEXT("ExpandEnvironmentStrings(error=%s)\r\n"), PPSHUAI::ParseError(GetLastError()).c_str());
+		}
 		else
 			_tprintf(TEXT("\n   %s"), infoBuf);
 	}
