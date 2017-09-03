@@ -170,8 +170,43 @@ __inline static void ExitDebugConsole()
 }
 
 //获取毫秒时间计数器(返回结果为100纳秒的时间, 1ns=1 000 000ms=1000 000 000s)
-CONST ULONGLONG MILLI_100NANO = 1000000ULL / 100ULL;
-__inline static LONGLONG GetCurrentMillisecons()
+#define MILLI_100NANO (ULONGLONG)(1000000ULL / 100ULL)
+__inline static std::string GetCurrentSystemTimeA()
+{
+	CHAR szTime[MAXCHAR] = {0};
+	SYSTEMTIME st = { 0 };
+	//FILETIME ft = { 0 };
+	//::GetSystemTimeAsFileTime(&ft);
+	::GetLocalTime(&st);
+	//::GetSystemTime(&st);
+	//::SystemTimeToFileTime(&st, &ft);
+	//::SystemTimeToTzSpecificLocalTime(NULL, &st, &st);
+	wsprintfA(szTime, ("%04d-%02d-%02d %02d:%02d:%02d.%03d"),
+		st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+	return std::string(szTime);
+}
+__inline static std::wstring GetCurrentSystemTimeW()
+{
+	WCHAR wzTime[MAXCHAR] = { 0 };
+	SYSTEMTIME st = { 0 };
+	//FILETIME ft = { 0 };
+	//::GetSystemTimeAsFileTime(&ft);
+	::GetLocalTime(&st);
+	//::GetSystemTime(&st);
+	//::SystemTimeToFileTime(&st, &ft);
+	//::SystemTimeToTzSpecificLocalTime(NULL, &st, &st);
+	wsprintfW(wzTime, (L"%04d-%02d-%02d %02d:%02d:%02d.%03d"),
+		st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+	return std::wstring(wzTime);
+}
+
+#if !defined(_UNICODE) && !defined(UNICODE)
+#define GetCurrentSystemTime GetCurrentSystemTimeA
+#else
+#define GetCurrentSystemTime GetCurrentSystemTimeW
+#endif
+
+__inline static LONGLONG GetCurrentTimerTicks()
 {
 	FILETIME ft = { 0 };
 	SYSTEMTIME st = { 0 };
@@ -182,6 +217,26 @@ __inline static LONGLONG GetCurrentMillisecons()
 	u.LowPart = ft.dwLowDateTime;
 	return u.QuadPart;
 }
+//获取运行时间间隔差值(输入参数单位为100纳秒)
+__inline static LONGLONG GetIntervalTimerTicks(LONGLONG llTime)
+{
+	return (LONGLONG)((GetCurrentTimerTicks() - llTime) / MILLI_100NANO);
+}
+//时间间隔差值(输入参数单位为100纳秒)
+__inline static LONGLONG SubtractTimerTicks(LONGLONG llTimeA, LONGLONG llTimeB)
+{
+	return (LONGLONG)((llTimeA - llTimeB) / MILLI_100NANO);
+}
+
+#if !defined(_DEBUG) && !defined(DEBUG)
+#define START_TIMER_TICKS(x)
+#define RESET_TIMER_TICKS(x)
+#define CLOSE_TIMER_TICKS(x)
+#else
+#define START_TIMER_TICKS(x) ULONGLONG ull##x = PPSHUAI::GetCurrentTimerTicks();
+#define RESET_TIMER_TICKS(x) ull##x = PPSHUAI::GetCurrentTimerTicks();
+#define CLOSE_TIMER_TICKS(x) printf(("%s %s: %s() %llu ms\r\n"), PPSHUAI::GetCurrentSystemTimeA().c_str(), #x, __FUNCTION__, (PPSHUAI::GetCurrentTimerTicks() - ull##x) / MILLI_100NANO);
+#endif
 
 namespace Convert{
 	//	ANSI to Unicode
@@ -934,7 +989,6 @@ namespace FilePath{
 		return tsSystemPath;
 	}
 
-
 	__inline static
 		BOOL IsFileExist(LPCTSTR fileName)
 	{
@@ -1013,6 +1067,106 @@ namespace FilePath{
 			pToken = _tcstok(NULL, _T("\\"));
 		}
 		return TRUE;
+	}
+
+	__inline static LPVOID MapViewOfFileAgain(HANDLE hFileMapping, LPVOID * lppBaseAddress, ULARGE_INTEGER * pui, SIZE_T stNumberOfBytesToMap = 0, LPVOID lpBaseAddress = 0)
+	{
+		if (lppBaseAddress && (*lppBaseAddress))
+		{
+			::UnmapViewOfFile((*lppBaseAddress));
+			(*lppBaseAddress) = NULL;
+		}
+		return ((*lppBaseAddress) = ::MapViewOfFileEx(hFileMapping, FILE_MAP_ALL_ACCESS, pui->HighPart, pui->LowPart, stNumberOfBytesToMap, lpBaseAddress));
+	}
+
+	__inline static void MapRelease(HANDLE * phFileMapping, LPVOID * lpBaseAddress)
+	{
+		if (lpBaseAddress && (*lpBaseAddress))
+		{
+			// 从进程的地址空间撤消文件数据映像
+			::UnmapViewOfFile((*lpBaseAddress));
+			(*lpBaseAddress) = NULL;
+		}
+
+		if (phFileMapping && (*phFileMapping))
+		{
+			// 关闭文件映射对象
+			::CloseHandle((*phFileMapping));
+			(*phFileMapping) = NULL;
+		}
+	}
+
+	__inline static HANDLE MapFileCreate(LPVOID * lpFileData, LPCTSTR lpFileName)
+	{
+		DWORD dwResult = 0;
+		PBYTE pbFile = NULL;
+		BOOL bLoopFlag = FALSE;
+		HANDLE hWaitEvent[] = { 0, 0 };
+		DWORD dwWaitEventNum = sizeof(hWaitEvent) / sizeof(HANDLE);
+
+		SYSTEM_INFO si = { 0 };
+		HANDLE hFileMapping = NULL;
+		LPVOID lpBaseAddress = NULL;
+		ULONGLONG ullFileVolume = 0LL;
+		SIZE_T stNumberOfBytesToMap = 0;
+		ULARGE_INTEGER uiFileSize = { 0, 0 };
+
+		// 创建文件内核对象，其句柄保存于hFile
+		HANDLE hFile = ::CreateFile(lpFileName,
+			GENERIC_WRITE | GENERIC_READ,
+			FILE_SHARE_READ,
+			NULL,
+			CREATE_ALWAYS,
+			FILE_FLAG_SEQUENTIAL_SCAN,
+			NULL);
+
+		uiFileSize.LowPart = ::GetFileSize(hFile, &uiFileSize.HighPart);
+		// 创建文件映射内核对象，句柄保存于hFileMapping
+		hFileMapping = CreateFileMapping(hFile, NULL, PAGE_READWRITE,
+			uiFileSize.HighPart, uiFileSize.LowPart, NULL);
+		if (hFile)
+		{
+			// 释放文件内核对象
+			CloseHandle(hFile);
+			hFile = NULL;
+		}
+
+		if (hFileMapping)
+		{
+			// 设定大小、偏移量等参数	
+			//SystemKernel::GetNativeSystemInformation(&si);
+			//ullFileVolume = si.dwAllocationGranularity;
+
+			// 将文件数据映射到进程的地址空间
+			(*lpFileData) = MapViewOfFileEx(hFileMapping, FILE_MAP_ALL_ACCESS,
+				uiFileSize.HighPart, uiFileSize.LowPart, stNumberOfBytesToMap, lpBaseAddress);
+		}
+
+		return hFileMapping;
+	}
+
+	__inline static HANDLE MapCreate(LPVOID * lpData, LPCTSTR lpMapName, ULARGE_INTEGER * puiFileSize)
+	{
+		SYSTEM_INFO si = { 0 };
+		HANDLE hFileMapping = NULL;
+		LPVOID lpBaseAddress = NULL;
+		ULONGLONG ullFileVolume = 0LL;
+		SIZE_T stNumberOfBytesToMap = 0;
+
+		// 创建文件映射内核对象，句柄保存于hFileMapping
+		hFileMapping = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
+			puiFileSize->HighPart, puiFileSize->LowPart, lpMapName);
+		if (hFileMapping)
+		{
+			// 设定大小、偏移量等参数	
+			//PPSHUAI::SystemKernel::GetNativeSystemInformation(&si);
+			//ullFileVolume = si.dwAllocationGranularity;
+
+			// 将文件数据映射到进程的地址空间
+			(*lpData) = MapViewOfFileEx(hFileMapping, FILE_MAP_ALL_ACCESS, 0, 0, puiFileSize->QuadPart, lpBaseAddress);
+		}
+
+		return hFileMapping;
 	}
 
 #define CMD_PATH_NAME				"CMD.EXE" //相对路径名称
@@ -1652,7 +1806,7 @@ namespace String{
 namespace SystemKernel{
 	
 	//获取Windows系统信息
-	__inline static VOID GetNativeSystemInformation(SYSTEM_INFO & system_info)
+	__inline static VOID GetNativeSystemInformation(SYSTEM_INFO * psi)
 	{
 		typedef void (WINAPI *LPFN_GetNativeSystemInfo)(LPSYSTEM_INFO);
 
@@ -1660,11 +1814,11 @@ namespace SystemKernel{
 		LPFN_GetNativeSystemInfo fnGetNativeSystemInfo = (LPFN_GetNativeSystemInfo)GetProcAddress(GetModuleHandle(_T("KERNEL32.DLL")), "GetNativeSystemInfo");
 		if (fnGetNativeSystemInfo)
 		{
-			fnGetNativeSystemInfo(&system_info);
+			fnGetNativeSystemInfo(psi);
 		}
 		else
 		{
-			GetSystemInfo(&system_info);
+			GetSystemInfo(psi);
 		}
 	}
 

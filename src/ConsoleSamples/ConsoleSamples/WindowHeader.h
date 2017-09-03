@@ -6,9 +6,6 @@
 #pragma comment(lib, "gdiplus")
 #include <map>
 
-typedef std::map<unsigned long, unsigned long> WNDMAP;
-typedef std::map<unsigned long, unsigned long>::iterator WNDMAPIT;
-
 namespace PPSHUAI
 {
 namespace NearSideAutoHide{
@@ -735,7 +732,7 @@ namespace ShadowWindow{
 		static HINSTANCE m_hInstance;
 
 		// Parent HWND and CShadowBorder object pares, in order to find CShadowBorder in ParentProc()
-		static WNDMAP m_ShadowWindowMap;
+		static std::map<HWND, PVOID> m_ShadowWindowMap;
 
 		//
 		typedef BOOL(WINAPI *pfnUpdateLayeredWindow)(HWND hWnd, HDC hdcDst, POINT *pptDst,
@@ -745,7 +742,7 @@ namespace ShadowWindow{
 
 		HWND m_hWnd;
 
-		LONG m_OriginParentProc;        // Original WndProc of parent window
+		LONG_PTR m_OriginParentProc;        // Original WndProc of parent window
 
 		enum ShadowStatus
 		{
@@ -784,7 +781,7 @@ namespace ShadowWindow{
 			HMODULE hUser32 = GetModuleHandle(_T("USER32.DLL"));
 			m_pUpdateLayeredWindow =
 				(pfnUpdateLayeredWindow)GetProcAddress(hUser32,
-				"UpdateLayeredWindow");
+				("UpdateLayeredWindow"));
 
 			// If the import did not succeed, make sure your app can handle it!
 			if (NULL == m_pUpdateLayeredWindow)
@@ -825,14 +822,14 @@ namespace ShadowWindow{
 				// Add parent window - shadow pair to the map
 				//_ASSERT(m_ShadowWindowMap.find((unsigned long)hParentWnd) == m_ShadowWindowMap.end());    // Only one shadow for each window
 				//m_ShadowWindowMap[hParentWnd] = (unsigned long)(this);
-				WNDMAPIT it = m_ShadowWindowMap.find((unsigned long)hParentWnd);
+				std::map<HWND, PVOID>::iterator it = m_ShadowWindowMap.find(hParentWnd);
 				if (it != m_ShadowWindowMap.end())
 				{
-					it->second = (unsigned long)(this);
+					it->second = (PVOID)(this);
 				}
 				else
 				{
-					m_ShadowWindowMap.insert(std::make_pair((unsigned long)hParentWnd, (unsigned long)(this)));
+					m_ShadowWindowMap.insert(std::map<HWND, PVOID>::value_type(hParentWnd, (this)));
 				}
 
 				// Create the shadow window
@@ -933,7 +930,7 @@ namespace ShadowWindow{
 		//static LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 		static LRESULT CALLBACK ParentProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		{
-			WNDMAPIT it = m_ShadowWindowMap.find((unsigned long)(hwnd));
+			std::map<HWND, PVOID>::iterator it = m_ShadowWindowMap.find(hwnd);
 			// Shadow must have been attached
 			if (it != m_ShadowWindowMap.end())
 			{
@@ -1361,7 +1358,7 @@ namespace ShadowWindow{
 	
 	HINSTANCE CShadowBorder::m_hInstance = (HINSTANCE)INVALID_HANDLE_VALUE;
 
-	WNDMAP CShadowBorder::m_ShadowWindowMap;
+	std::map<HWND, PVOID> CShadowBorder::m_ShadowWindowMap;
 }
 
 namespace GUI{
@@ -2375,6 +2372,24 @@ namespace GUI{
 		}
 
 		return bResult;
+	}
+	__inline static
+		BOOL DragMoveFull(HWND hWnd)
+	{
+#ifndef _SYSCOMMAND_SC_DRAGMOVE
+#define _SYSCOMMAND_SC_DRAGMOVE  0xF012
+#endif // !_SYSCOMMAND_SC_DRAGMOVE
+		::SystemParametersInfo(SPI_SETDRAGFULLWINDOWS, TRUE, NULL, 0);
+		::SendMessage(hWnd, WM_SYSCOMMAND, _SYSCOMMAND_SC_DRAGMOVE, 0);
+		//RECT rc = { 0 };
+		//::GetClientRect(hWnd, &rc);
+		//::SystemParametersInfo(SPI_SETDRAGFULLWINDOWS, FALSE, NULL, 0);
+		//::PostMessage(hWnd, WM_NCLBUTTONDOWN, HTCAPTION, MAKELPARAM(rc.left, rc.top));
+#ifdef _SYSCOMMAND_SC_DRAGMOVE
+#undef _SYSCOMMAND_SC_DRAGMOVE  
+#endif // !_SYSCOMMAND_SC_DRAGMOVE
+
+		return TRUE;
 	}
 
 	/////////////////////////////////////////////////////////////////////////////////////////////
@@ -3763,14 +3778,22 @@ namespace GUI{
 
 	//  This function is called by the Windows function DispatchMessage()
 	//LRESULT CALLBACK WindowProcedure(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
-
+	ShadowWindow::CShadowBorder G_ShadowBorder;
 	class CWindowsManager{
 	public:
 		
-		CWindowsManager()
+		CWindowsManager(const _TCHAR * ptszFileName = _T("demo.gif"))
 		{
 			CWindowsManager::m_pAnimation = NULL;
 			memset((void *)&CWindowsManager::m_rcWindow, 0, sizeof(RECT));
+			if (ptszFileName && _tcslen(ptszFileName))
+			{
+				_tcscpy(CWindowsManager::m_tszGifFileName, ptszFileName);
+			}
+			else
+			{
+				ExitProcess(0L);
+			}
 		}
 		virtual ~CWindowsManager()
 		{
@@ -3788,10 +3811,21 @@ namespace GUI{
 			{
 			case WM_CREATE:
 			{
-				HMENU hMenu = GetMenu(NULL);
+				// Initiation of the shadow
+				ShadowWindow::CShadowBorder::Initialize(GetModuleHandle(NULL));
 
+				::SetWindowLong(hWnd, GWL_STYLE, ::GetWindowLong(hWnd, GWL_STYLE) & (~WS_CAPTION));
+				::SetWindowPos(hWnd, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_DRAWFRAME);
+				//添加阴影效果
+				SetClassLong(hWnd, GCL_STYLE, GetClassLong(hWnd, GCL_STYLE) | CS_DROPSHADOW);
+
+				G_ShadowBorder.Create(hWnd);
+				G_ShadowBorder.SetSize(4);
+				G_ShadowBorder.SetColor(RGB(255, 0, 0));
+				G_ShadowBorder.SetPosition(0, 0);
+				
 				// GDI+
-				m_pAnimation = new AnimationDisplayer::CAnimationDisplayer(Convert::TToW(_T("d:\\test.gif")).c_str());
+				m_pAnimation = new AnimationDisplayer::CAnimationDisplayer(Convert::TToW(CWindowsManager::m_tszGifFileName).c_str());
 
 				RECT rc = { 0 };
 				::GetClientRect(hWnd, &rc);
@@ -3813,12 +3847,17 @@ namespace GUI{
 				GUI::NotifyUpdate(hWnd, &CWindowsManager::m_rcWindow);
 			}
 			break;
+			case WM_LBUTTONDOWN:
+			{
+				GUI::DragMoveFull(hWnd);
+			}
+			break;
 			case WM_PAINT:
 			{
-				ULONG uARGB[2] = { ARGB(0x7F, 0x00, 0x7F, 0x00), ARGB(0x7F, 0xFF, 0x00, 0x00) };
+				ULONG uARGB[2] = { ARGB(0xFF, 0x7F, 0xFF, 0x7F), ARGB(0xFF, 0xFF, 0x7F, 0x7F) };
 				RECT rcWnd = { 0 };
 				PAINTSTRUCT ps = { 0 };
-				RECT rcMemory = { 1, 1, 1, 1 };
+				RECT rcMemory = { 8, 8, 8, 8 };
 				HDC hDC = ::BeginPaint(hWnd, &ps);
 				GetClientRect(hWnd, &rcWnd);
 				GUI::DrawMemoryBitmap(hDC, hWnd, rcWnd.right, rcWnd.bottom,
@@ -3872,7 +3911,7 @@ namespace GUI{
 		}
 
 	public:
-		
+		//static ShadowWindow::CShadowBorder G_ShadowBorder;
 		static AnimationDisplayer::CAnimationDisplayer * CWindowsManager::m_pAnimation;
 		static RECT CWindowsManager::m_rcWindow;
 		static _TCHAR m_tszGifFileName[MAX_PATH + 1];
