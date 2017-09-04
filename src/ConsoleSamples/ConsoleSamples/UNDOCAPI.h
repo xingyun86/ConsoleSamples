@@ -4,17 +4,21 @@
 #include <map>
 #include <string>
 
+/////////////////////////////////////////////////////////////////////////////////
+namespace PPSHUAI{
+#define __MY_A(V)				#V
+#define __MY_W(V)				L##V
+
 #if !defined(_UNICODE) && !defined(UNICODE)
+#define __MY_T(V)				#V
 #define TSTRING std::string
 #else
 #define TSTRING std::wstring
+#define __MY_T(V)				L###V
 #endif
 
 #define _tstring TSTRING
 #define tstring TSTRING
-
-/////////////////////////////////////////////////////////////////////////////////
-namespace PPSHUAI{
 
 		typedef LONG NTSTATUS;
 
@@ -401,15 +405,7 @@ namespace PPSHUAI{
 
 		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		//	动态模块方法使用定义区
-#if !defined(_UNICODE) && !defined(UNICODE)
-#define __MY_T(V)	#V
-#else
-#define __MY_T(V)	L###V
-#endif // !defined(_UNICODE) && !defined(UNICODE)
-#define __MY_A(V)	#V
-
-#define STRING	std::string
-
+		
 #define FUNC_TYPE(NAME)			(P_##NAME)
 
 		typedef DWORD(WINAPI *FUNC_TYPE(ZwSuspendProcess))(HANDLE);
@@ -427,23 +423,13 @@ namespace PPSHUAI{
 		typedef NTSTATUS(WINAPI *FUNC_TYPE(ZwWow64WriteVirtualMemory64))(HANDLE, PVOID64, PVOID, ULONGLONG, PULONGLONG);
 		typedef NTSTATUS(WINAPI *FUNC_TYPE(ZwWow64QueryVirtualMemory64))(HANDLE, PVOID64, MEMORY_INFORMATION_CLASS, PVOID, ULONGLONG, PULONGLONG);
 
-		typedef std::map<TSTRING, TSTRING> TSTRINGSTRINGMAP;
-		typedef TSTRINGSTRINGMAP::iterator TSTRINGSTRINGMAPIT;
-		typedef TSTRINGSTRINGMAP::value_type TSTRINGSTRINGMAPPAIR;
 #define MAPKV_INIT_STR(NAME)  {__MY_T(#NAME), __MY_T(#NAME)}
 
-		typedef std::map<TSTRING, VOID *> TSTRINGHMODULEMAP;
-		typedef TSTRINGHMODULEMAP::iterator TSTRINGHMODULEMAPIT;
-		typedef TSTRINGHMODULEMAP::value_type TSTRINGHMODULEMAPPAIR;
-
-#define LIB_MAP_BEGIN(NAME)	static TSTRINGHMODULEMAP G_##NAME_LIBMAP = {
+#define LIB_MAP_BEGIN(NAME)	static std::map<tstring, void *> G_##NAME_LIBMAP = {
 #define LIB_MAP_END()		};
 #define MAPKV_INIT_LIB(NAME)  {__MY_T(NAME), 0}
 
-		typedef std::map<STRING, VOID *> STRINGMETHODMAP;
-		typedef STRINGMETHODMAP::iterator STRINGMETHODMAPIT;
-		typedef STRINGMETHODMAP::value_type STRINGMETHODMAPPAIR;
-#define FUN_MAP_BEGIN(NAME)	static STRINGMETHODMAP G_##NAME_FUNMAP = {
+#define FUN_MAP_BEGIN(NAME)	static std::map<std::string, void *> G_##NAME_FUNMAP = {
 #define FUN_MAP_END()		};
 #define MAPKV_INIT_FUN(NAME)  {__MY_A(NAME), 0}
 
@@ -505,5 +491,92 @@ namespace PPSHUAI{
 			}
 			//	动态模块方法使用定义区
 			/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		}
+		namespace SystemKernel{
+
+			__inline static NTSTATUS EnumProcessObject(
+				std::vector<OBJECT_BASIC_INFORMATION> * pobiv,
+				std::vector<OBJECT_NAME_INFORMATION> * poniv,
+				std::vector<OBJECT_TYPE_INFORMATION> * potiv,
+				DWORD dwProcessID)
+			{
+				BOOL bResult = FALSE;
+				NTSTATUS ntStatus = 0;
+				HANDLE hTargetHandle = 0;
+				HANDLE hSourceProcess = 0;
+				HANDLE hTargetProcess = 0;
+				DWORD dwProcessHandleCount = 0;
+				DWORD dwIndexX = 0;
+				DWORD dwIndexY = 0;
+				DWORD dwSourceHandleNumber = 0;
+				SYSTEM_HANDLE* pSystemHandle = 0;
+				OBJECT_BASIC_INFORMATION * pObjectBasicInformation = NULL;
+				OBJECT_NAME_INFORMATION * pObjectNameInformation = NULL;
+				OBJECT_TYPE_INFORMATION * pObjectTypeInformation = NULL;
+				DWORD dwSystemHandleInfomationSize = sizeof(SYSTEM_HANDLE_INFORMATION);
+				DWORD dwObjectBasicInformationSize = sizeof(OBJECT_BASIC_INFORMATION) + USN_PAGE_SIZE;
+				DWORD dwObjectNameInformationSize = sizeof(OBJECT_NAME_INFORMATION) + USN_PAGE_SIZE;
+				DWORD dwObjectTypeInformationSize = sizeof(OBJECT_TYPE_INFORMATION) + USN_PAGE_SIZE;
+
+				hTargetProcess = GetCurrentProcess();
+				pObjectBasicInformation = (OBJECT_BASIC_INFORMATION*)malloc(dwObjectBasicInformationSize);
+				pObjectNameInformation = (OBJECT_NAME_INFORMATION*)malloc(dwObjectNameInformationSize);
+				pObjectTypeInformation = (OBJECT_TYPE_INFORMATION*)malloc(dwObjectTypeInformationSize);
+
+				hSourceProcess = OpenProcess(PROCESS_ALL_ACCESS | PROCESS_DUP_HANDLE | PROCESS_SUSPEND_RESUME, FALSE, dwProcessID);
+				if (!hSourceProcess)
+				{
+					ntStatus = STATUS_UNSUCCESSFUL;
+					return ntStatus;
+				}
+				(NTSTATUS)FUNC_PROC(ZwSuspendProcess)(hSourceProcess);
+				(NTSTATUS)FUNC_PROC(ZwQueryInformationProcess)(hSourceProcess, ProcessHandleInformation, &dwProcessHandleCount, sizeof(dwProcessHandleCount), NULL);
+
+				//进程有效句柄从4开始,每次以4递增
+				dwSourceHandleNumber = sizeof(DWORD);
+
+				for (dwIndexY = 0; dwIndexY < dwProcessHandleCount; dwIndexY++, dwSourceHandleNumber += sizeof(dwSourceHandleNumber))
+				{
+					//判断是否为有效句柄，返回TRUE，就是有效句柄
+					bResult = DuplicateHandle(hSourceProcess, (HANDLE)dwSourceHandleNumber, hTargetProcess, &hTargetHandle, 0, FALSE, DUPLICATE_SAME_ACCESS);
+					if (!bResult)
+					{
+						continue;
+					}
+					else
+					{
+						memset(pObjectBasicInformation, 0, dwObjectBasicInformationSize);
+						memset(pObjectNameInformation, 0, dwObjectNameInformationSize);
+						memset(pObjectTypeInformation, 0, dwObjectTypeInformationSize);
+
+						(NTSTATUS)FUNC_PROC(ZwQueryObject)(hTargetHandle, ObjectBasicInformation, pObjectBasicInformation, dwObjectBasicInformationSize, NULL);
+						(NTSTATUS)FUNC_PROC(ZwQueryObject)(hTargetHandle, ObjectNameInformation, pObjectNameInformation, dwObjectNameInformationSize, NULL);
+						(NTSTATUS)FUNC_PROC(ZwQueryObject)(hTargetHandle, ObjectTypeInformation, pObjectTypeInformation, dwObjectTypeInformationSize, NULL);
+						if (pObjectNameInformation->Name.Length && pObjectTypeInformation)
+						{
+							if (pobiv)
+							{
+								pobiv->push_back(*pObjectBasicInformation);
+							}
+							if (poniv)
+							{
+								poniv->push_back(*pObjectNameInformation);
+							}
+							if (potiv)
+							{
+								potiv->push_back(*pObjectTypeInformation);
+							}
+						}
+						CloseHandle(hTargetHandle);
+						hTargetHandle = NULL;
+					}
+				}
+				(NTSTATUS)FUNC_PROC(ZwResumeProcess)(hSourceProcess);
+				CloseHandle(hSourceProcess);
+				hSourceProcess = NULL;
+
+				ntStatus = STATUS_SUCCESS;
+				return ntStatus;
+			}
 		}
 }

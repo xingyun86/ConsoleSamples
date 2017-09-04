@@ -39,6 +39,12 @@
     <ClInclude Include="FileMapHeader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="HeapWalk.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="PEFileInfo.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">

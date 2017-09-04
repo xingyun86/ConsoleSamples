@@ -1,13 +1,29 @@
 
 #include <windows.h>
+#include <commctrl.h>
 #include <tchar.h>
 #include <math.h>
 #include <gdiplus.h>
 #pragma comment(lib, "gdiplus")
 #include <map>
+#include <string>
 
 namespace PPSHUAI
 {
+#define __MY_A(V)				#V
+#define __MY_W(V)				L##V
+
+#if !defined(_UNICODE) && !defined(UNICODE)
+#define __MY_T(V)				#V
+#define TSTRING std::string
+#else
+#define TSTRING std::wstring
+#define __MY_T(V)				L###V
+#endif
+
+#define _tstring TSTRING
+#define tstring TSTRING
+
 namespace NearSideAutoHide{
 
 #define NEAR_SIZE 1 //定义自动停靠有效距离
@@ -326,7 +342,7 @@ namespace NearSideAutoHide{
 	}
 }
 
-namespace AnimationDisplayer{
+namespace GdiplusDisplay{
 	static ULONG_PTR gdiplusToken = 0;
 	void GdiplusInitialize()
 	{		
@@ -342,344 +358,6 @@ namespace AnimationDisplayer{
 		// Shutdown GDI+ subystem
 		Gdiplus::GdiplusShutdown(gdiplusToken);
 	}
-	class CAnimationDisplayer : public Gdiplus::Image
-	{
-	public:
-
-		CAnimationDisplayer(const WCHAR* filename, BOOL useEmbeddedColorManagement = FALSE)
-			: Image(filename, useEmbeddedColorManagement)
-		{
-			Initialize();
-
-			m_bIsInitialized = true;
-
-			TestForAnimatedGIF();
-		}
-
-		~CAnimationDisplayer()
-		{
-			Destroy();
-		}
-
-	public:
-
-		void Draw(HDC hDC);
-
-		void GetSize(SIZE & size)
-		{
-			size.cx = GetWidth();
-			size.cy = GetHeight();
-			//CSize(GetWidth(), GetHeight());
-		}
-
-		bool	IsAnimatedGIF() 
-		{ 
-			return m_nFrameCount > 1; 
-		}
-		void	SetPause(bool bPaused)
-		{
-			if (!IsAnimatedGIF())
-				return;
-
-			if (bPaused && !m_bPaused)
-			{
-				::ResetEvent(m_hPaused);
-			}
-			else
-			{
-				if (m_bPaused && !bPaused)
-				{
-					::SetEvent(m_hPaused);
-				}
-			}
-
-			m_bPaused = bPaused;
-		}
-		bool	IsPaused() 
-		{ 
-			return m_bPaused; 
-		}
-		bool	InitAnimation(HWND hWnd, POINT pt)
-		{
-			m_hWnd = hWnd;
-			m_pt = pt;
-
-			if (!m_bIsInitialized)
-			{
-				//TRACE(_T("GIF not initialized\n"));
-				return false;
-			};
-
-			if (IsAnimatedGIF())
-			{
-				if (m_hThread == NULL)
-				{
-
-					DWORD dwThreadID = 0;
-					
-					m_hThread = (HANDLE)::CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)_ThreadAnimationProc, this, CREATE_SUSPENDED, &dwThreadID);
-
-					if (!m_hThread)
-					{
-						//TRACE(_T("Couldn't start a GIF animation thread\n"));
-						return true;
-					}
-					else
-					{
-						::ResumeThread(m_hThread);
-					}
-				}
-			}
-
-			return false;
-
-		}
-		void	Destroy()
-		{
-			if (m_hThread)
-			{
-				// If pause un pause
-				SetPause(false);
-
-				SetEvent(m_hExitEvent);
-				WaitForSingleObject(m_hThread, INFINITE);
-			}
-
-			CloseHandle(m_hThread);
-			CloseHandle(m_hExitEvent);
-			CloseHandle(m_hPaused);
-
-			free(m_pPropertyItem);
-
-			m_pPropertyItem = NULL;
-			m_hThread = NULL;
-			m_hExitEvent = NULL;
-			m_hPaused = NULL;
-
-			if (m_pStream)
-			{
-				m_pStream->Release();
-			}
-
-			m_bIsInitialized = false;
-		}
-
-	protected:
-
-		bool TestForAnimatedGIF()
-		{
-			UINT count = 0;
-			count = GetFrameDimensionsCount();
-			GUID* pDimensionIDs = new GUID[count];
-
-			// Get the list of frame dimensions from the Image object.
-			GetFrameDimensionsList(pDimensionIDs, count);
-
-			// Get the number of frames in the first dimension.
-			m_nFrameCount = GetFrameCount(&pDimensionIDs[0]);
-
-			// Assume that the image has a property item of type PropertyItemEquipMake.
-			// Get the size of that property item.
-			int nSize = GetPropertyItemSize(PropertyTagFrameDelay);
-
-			// Allocate a buffer to receive the property item.
-			m_pPropertyItem = (Gdiplus::PropertyItem*) malloc(nSize);
-
-			GetPropertyItem(PropertyTagFrameDelay, nSize, m_pPropertyItem);
-			
-			delete  pDimensionIDs; pDimensionIDs = NULL;
-
-			return m_nFrameCount > 1;
-		}
-		void Initialize()
-		{
-			m_pStream = NULL;
-			m_nFramePosition = 0;
-			m_nFrameCount = 0;
-			m_hThread = NULL;
-			m_bIsInitialized = false;
-			m_pPropertyItem = NULL;
-			//lastResult = InvalidParameter;
-
-#ifdef INDIGO_CTRL_PROJECT
-			m_hInst = _Module.GetResourceInstance();
-#else
-			m_hInst = GetModuleHandle(NULL);//AfxGetResourceHandle();
-#endif
-
-			m_bPaused = false;
-
-			m_hExitEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-
-			m_hPaused = CreateEvent(NULL, TRUE, TRUE, NULL);
-
-		}
-		bool				DrawFrameGIF()
-		{
-
-			::WaitForSingleObject(m_hPaused, INFINITE);
-
-			GUID   pageGuid = Gdiplus::FrameDimensionTime;
-
-			LONG hmWidth = GetWidth();
-			LONG hmHeight = GetHeight();
-
-			HDC hDC = GetDC(m_hWnd);
-			if (hDC)
-			{
-				Gdiplus::Graphics graphics(hDC);
-				graphics.DrawImage((Gdiplus::Image *)this, (INT)m_pt.x, (INT)m_pt.y, (INT)hmWidth, (INT)hmHeight);
-				ReleaseDC(m_hWnd, hDC);
-			}
-
-			SelectActiveFrame(&pageGuid, m_nFramePosition++);
-
-			if (m_nFramePosition == m_nFrameCount)
-				m_nFramePosition = 0;
-
-
-			long lPause = ((long*)m_pPropertyItem->value)[m_nFramePosition] * 10;
-
-			DWORD dwErr = WaitForSingleObject(m_hExitEvent, lPause);
-
-			return dwErr == WAIT_OBJECT_0;
-		}
-
-		IStream*			m_pStream;
-
-		bool LoadFromBuffer(BYTE* pBuff, int nSize)
-		{
-			bool bResult = false;
-
-			HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE, nSize);
-			if (hGlobal)
-			{
-				void* pData = GlobalLock(hGlobal);
-				if (pData)
-					memcpy(pData, pBuff, nSize);
-
-				GlobalUnlock(hGlobal);
-
-				if (CreateStreamOnHGlobal(hGlobal, TRUE, &m_pStream) == S_OK)
-					bResult = true;
-
-			}
-
-
-			return bResult;
-		}
-		bool GetResource(LPCTSTR lpName, LPCTSTR lpType, void* pResource, int& nBufSize)
-		{
-			HRSRC		hResInfo;
-			HANDLE		hRes;
-			LPSTR		lpRes = NULL;
-			int			nLen = 0;
-			bool		bResult = FALSE;
-
-			// Find the resource
-
-			hResInfo = FindResource(m_hInst, lpName, lpType);
-			if (hResInfo == NULL)
-			{
-				DWORD dwErr = GetLastError();
-				return false;
-			}
-
-			// Load the resource
-			hRes = LoadResource(m_hInst, hResInfo);
-
-			if (hRes == NULL)
-				return false;
-
-			// Lock the resource
-			lpRes = (char*)LockResource(hRes);
-
-			if (lpRes != NULL)
-			{
-				if (pResource == NULL)
-				{
-					nBufSize = SizeofResource(m_hInst, hResInfo);
-					bResult = true;
-				}
-				else
-				{
-					if (nBufSize >= (int)SizeofResource(m_hInst, hResInfo))
-					{
-						memcpy(pResource, lpRes, nBufSize);
-						bResult = true;
-					}
-				}
-
-				UnlockResource(hRes);
-			}
-
-			// Free the resource
-			FreeResource(hRes);
-
-			return bResult;
-		}
-
-		bool Load(LPCTSTR sResourceType, LPCTSTR sResource)
-		{
-			bool bResult = false;
-
-
-			BYTE*	pBuff = NULL;
-			int		nSize = 0;
-			if (GetResource(sResource, sResourceType, pBuff, nSize))
-			{
-				if (nSize > 0)
-				{
-					pBuff = new BYTE[nSize];
-
-					if (GetResource(sResource, sResourceType, pBuff, nSize))
-					{
-						if (LoadFromBuffer(pBuff, nSize))
-						{
-
-							bResult = true;
-						}
-					}
-
-					delete[] pBuff;
-				}
-			}
-
-
-			m_bIsInitialized = bResult;
-
-			return bResult;
-		}
-
-		void ThreadAnimation()
-		{
-			m_nFramePosition = 0;
-
-			bool bExit = false;
-			while (!(bExit = DrawFrameGIF()));
-		}
-
-		static UINT WINAPI _ThreadAnimationProc(LPVOID pParam)
-		{
-			//ASSERT(pParam);
-			CAnimationDisplayer *pImage = reinterpret_cast<CAnimationDisplayer *> (pParam);
-			pImage->ThreadAnimation();
-
-			return 0;
-		}
-
-		HANDLE			m_hThread;
-		HANDLE			m_hPaused;
-		HANDLE			m_hExitEvent;
-		HINSTANCE		m_hInst;
-		HWND			m_hWnd;
-		UINT			m_nFrameCount;
-		UINT			m_nFramePosition;
-		bool			m_bIsInitialized;
-		bool			m_bPaused;
-		Gdiplus::PropertyItem*	m_pPropertyItem;
-		POINT			m_pt;
-	};
 }
 
 namespace ShadowWindow{
@@ -1362,6 +1040,66 @@ namespace ShadowWindow{
 }
 
 namespace GUI{
+	typedef enum COLUMN_DATATYPE{
+		CDT_NULL = 0,
+		CDT_DEC = 1,
+		CDT_HEX = 2,
+		CDT_STRING = 3,
+		CDT_OTHERS,
+	};
+
+	__inline static void RegisterDropFilesEvent(HWND hWnd)
+	{
+#ifndef WM_COPYGLOBALDATA
+#define WM_COPYGLOBALDAYA	0x0049
+#endif
+
+#ifndef MSGFLT_ADD
+#define MSGFLT_ADD 1
+#endif
+
+#ifndef MSGFLT_REMOVE
+#define MSGFLT_REMOVE 2
+#endif
+		SetWindowLong(hWnd, GWL_EXSTYLE, GetWindowLong(hWnd, GWL_EXSTYLE) | WS_EX_ACCEPTFILES);
+		typedef BOOL(WINAPI *LPFN_ChangeWindowMessageFilter)(__in UINT message, __in DWORD dwFlag);
+		LPFN_ChangeWindowMessageFilter pfnChangeWindowMessageFilter = (LPFN_ChangeWindowMessageFilter)GetProcAddress(GetModuleHandle(_T("USER32.DLL")), "ChangeWindowMessageFilter");
+		if (pfnChangeWindowMessageFilter)
+		{
+			pfnChangeWindowMessageFilter(WM_DROPFILES, MSGFLT_ADD);
+			pfnChangeWindowMessageFilter(WM_COPYDATA, MSGFLT_ADD);
+			pfnChangeWindowMessageFilter(WM_COPYGLOBALDAYA, MSGFLT_ADD);// 0x0049 == WM_COPYGLOBALDATA
+		}
+	}
+	__inline static size_t GetDropFiles(std::map<TSTRING, TSTRING> & ttmap, HDROP hDropInfo)
+	{
+		UINT nIndex = 0;
+		UINT nNumOfFiles = 0;
+		_TCHAR tszFilePathName[MAX_PATH + 1] = { 0 };
+
+		//得到文件个数
+		nNumOfFiles = DragQueryFile(hDropInfo, 0xFFFFFFFF, NULL, 0);
+
+		for (nIndex = 0; nIndex < nNumOfFiles; nIndex++)
+		{
+			//得到文件名
+			DragQueryFile(hDropInfo, nIndex, (LPTSTR)tszFilePathName, _MAX_PATH);
+			ttmap.insert(std::map<tstring, tstring>::value_type(tszFilePathName, tszFilePathName));
+		}
+
+		DragFinish(hDropInfo);
+
+		return nNumOfFiles;
+	}
+
+	__inline static LONG_PTR SetWindowUserData(HWND hWnd, LONG_PTR lPtr)
+	{
+		return ::SetWindowLongPtr(hWnd, GWLP_USERDATA, lPtr);
+	}
+	__inline static LONG_PTR GetWindowUserData(HWND hWnd)
+	{
+		return GetWindowLongPtr(hWnd, GWLP_USERDATA);
+	}
 
 	//显示在屏幕中央
 	__inline static void CenterWindowInScreen(HWND hWnd)
@@ -3776,6 +3514,345 @@ namespace GUI{
 		return msg.wParam;
 	}
 
+	class CAnimationDisplayer : public Gdiplus::Image
+	{
+	public:
+
+		CAnimationDisplayer(const WCHAR* filename, BOOL useEmbeddedColorManagement = FALSE)
+			: Image(filename, useEmbeddedColorManagement)
+		{
+			Initialize();
+
+			m_bIsInitialized = true;
+
+			TestForAnimatedGIF();
+		}
+
+		~CAnimationDisplayer()
+		{
+			Destroy();
+		}
+
+	public:
+
+		void Draw(HDC hDC);
+
+		void GetSize(SIZE & size)
+		{
+			size.cx = GetWidth();
+			size.cy = GetHeight();
+			//CSize(GetWidth(), GetHeight());
+		}
+
+		bool	IsAnimatedGIF()
+		{
+			return m_nFrameCount > 1;
+		}
+		void	SetPause(bool bPaused)
+		{
+			if (!IsAnimatedGIF())
+				return;
+
+			if (bPaused && !m_bPaused)
+			{
+				::ResetEvent(m_hPaused);
+			}
+			else
+			{
+				if (m_bPaused && !bPaused)
+				{
+					::SetEvent(m_hPaused);
+				}
+			}
+
+			m_bPaused = bPaused;
+		}
+		bool	IsPaused()
+		{
+			return m_bPaused;
+		}
+		bool	InitAnimation(HWND hWnd, POINT pt)
+		{
+			m_hWnd = hWnd;
+			m_pt = pt;
+
+			if (!m_bIsInitialized)
+			{
+				//TRACE(_T("GIF not initialized\n"));
+				return false;
+			};
+
+			if (IsAnimatedGIF())
+			{
+				if (m_hThread == NULL)
+				{
+
+					DWORD dwThreadID = 0;
+
+					m_hThread = (HANDLE)::CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)_ThreadAnimationProc, this, CREATE_SUSPENDED, &dwThreadID);
+
+					if (!m_hThread)
+					{
+						//TRACE(_T("Couldn't start a GIF animation thread\n"));
+						return true;
+					}
+					else
+					{
+						::ResumeThread(m_hThread);
+					}
+				}
+			}
+
+			return false;
+
+		}
+		void	Destroy()
+		{
+			if (m_hThread)
+			{
+				// If pause un pause
+				SetPause(false);
+
+				SetEvent(m_hExitEvent);
+				WaitForSingleObject(m_hThread, INFINITE);
+			}
+
+			CloseHandle(m_hThread);
+			CloseHandle(m_hExitEvent);
+			CloseHandle(m_hPaused);
+
+			free(m_pPropertyItem);
+
+			m_pPropertyItem = NULL;
+			m_hThread = NULL;
+			m_hExitEvent = NULL;
+			m_hPaused = NULL;
+
+			if (m_pStream)
+			{
+				m_pStream->Release();
+			}
+
+			m_bIsInitialized = false;
+		}
+
+	protected:
+
+		bool TestForAnimatedGIF()
+		{
+			UINT count = 0;
+			count = GetFrameDimensionsCount();
+			GUID* pDimensionIDs = new GUID[count];
+
+			// Get the list of frame dimensions from the Image object.
+			GetFrameDimensionsList(pDimensionIDs, count);
+
+			// Get the number of frames in the first dimension.
+			m_nFrameCount = GetFrameCount(&pDimensionIDs[0]);
+
+			// Assume that the image has a property item of type PropertyItemEquipMake.
+			// Get the size of that property item.
+			int nSize = GetPropertyItemSize(PropertyTagFrameDelay);
+
+			// Allocate a buffer to receive the property item.
+			m_pPropertyItem = (Gdiplus::PropertyItem*) malloc(nSize);
+
+			GetPropertyItem(PropertyTagFrameDelay, nSize, m_pPropertyItem);
+
+			delete  pDimensionIDs; pDimensionIDs = NULL;
+
+			return m_nFrameCount > 1;
+		}
+		void Initialize()
+		{
+			m_pStream = NULL;
+			m_nFramePosition = 0;
+			m_nFrameCount = 0;
+			m_hThread = NULL;
+			m_bIsInitialized = false;
+			m_pPropertyItem = NULL;
+			//lastResult = InvalidParameter;
+
+#ifdef INDIGO_CTRL_PROJECT
+			m_hInst = _Module.GetResourceInstance();
+#else
+			m_hInst = GetModuleHandle(NULL);//AfxGetResourceHandle();
+#endif
+
+			m_bPaused = false;
+
+			m_hExitEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+
+			m_hPaused = CreateEvent(NULL, TRUE, TRUE, NULL);
+
+		}
+		bool				DrawFrameGIF()
+		{
+
+			::WaitForSingleObject(m_hPaused, INFINITE);
+
+			GUID   pageGuid = Gdiplus::FrameDimensionTime;
+
+			LONG hmWidth = GetWidth();
+			LONG hmHeight = GetHeight();
+
+			HDC hDC = GetDC(m_hWnd);
+			if (hDC)
+			{
+				Gdiplus::Graphics graphics(hDC);
+				graphics.DrawImage((Gdiplus::Image *)this, (INT)m_pt.x, (INT)m_pt.y, (INT)hmWidth, (INT)hmHeight);
+				ReleaseDC(m_hWnd, hDC);
+			}
+
+			SelectActiveFrame(&pageGuid, m_nFramePosition++);
+
+			if (m_nFramePosition == m_nFrameCount)
+				m_nFramePosition = 0;
+
+
+			long lPause = ((long*)m_pPropertyItem->value)[m_nFramePosition] * 10;
+
+			DWORD dwErr = WaitForSingleObject(m_hExitEvent, lPause);
+
+			return dwErr == WAIT_OBJECT_0;
+		}
+
+		IStream*			m_pStream;
+
+		bool LoadFromBuffer(BYTE* pBuff, int nSize)
+		{
+			bool bResult = false;
+
+			HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE, nSize);
+			if (hGlobal)
+			{
+				void* pData = GlobalLock(hGlobal);
+				if (pData)
+					memcpy(pData, pBuff, nSize);
+
+				GlobalUnlock(hGlobal);
+
+				if (CreateStreamOnHGlobal(hGlobal, TRUE, &m_pStream) == S_OK)
+					bResult = true;
+
+			}
+
+
+			return bResult;
+		}
+		bool GetResource(LPCTSTR lpName, LPCTSTR lpType, void* pResource, int& nBufSize)
+		{
+			HRSRC		hResInfo;
+			HANDLE		hRes;
+			LPSTR		lpRes = NULL;
+			int			nLen = 0;
+			bool		bResult = FALSE;
+
+			// Find the resource
+
+			hResInfo = FindResource(m_hInst, lpName, lpType);
+			if (hResInfo == NULL)
+			{
+				DWORD dwErr = GetLastError();
+				return false;
+			}
+
+			// Load the resource
+			hRes = LoadResource(m_hInst, hResInfo);
+
+			if (hRes == NULL)
+				return false;
+
+			// Lock the resource
+			lpRes = (char*)LockResource(hRes);
+
+			if (lpRes != NULL)
+			{
+				if (pResource == NULL)
+				{
+					nBufSize = SizeofResource(m_hInst, hResInfo);
+					bResult = true;
+				}
+				else
+				{
+					if (nBufSize >= (int)SizeofResource(m_hInst, hResInfo))
+					{
+						memcpy(pResource, lpRes, nBufSize);
+						bResult = true;
+					}
+				}
+
+				UnlockResource(hRes);
+			}
+
+			// Free the resource
+			FreeResource(hRes);
+
+			return bResult;
+		}
+
+		bool Load(LPCTSTR sResourceType, LPCTSTR sResource)
+		{
+			bool bResult = false;
+
+
+			BYTE*	pBuff = NULL;
+			int		nSize = 0;
+			if (GetResource(sResource, sResourceType, pBuff, nSize))
+			{
+				if (nSize > 0)
+				{
+					pBuff = new BYTE[nSize];
+
+					if (GetResource(sResource, sResourceType, pBuff, nSize))
+					{
+						if (LoadFromBuffer(pBuff, nSize))
+						{
+
+							bResult = true;
+						}
+					}
+
+					delete[] pBuff;
+				}
+			}
+
+
+			m_bIsInitialized = bResult;
+
+			return bResult;
+		}
+
+		void ThreadAnimation()
+		{
+			m_nFramePosition = 0;
+
+			bool bExit = false;
+			while (!(bExit = DrawFrameGIF()));
+		}
+
+		static UINT WINAPI _ThreadAnimationProc(LPVOID pParam)
+		{
+			//ASSERT(pParam);
+			CAnimationDisplayer *pImage = reinterpret_cast<CAnimationDisplayer *> (pParam);
+			pImage->ThreadAnimation();
+
+			return 0;
+		}
+
+		HANDLE			m_hThread;
+		HANDLE			m_hPaused;
+		HANDLE			m_hExitEvent;
+		HINSTANCE		m_hInst;
+		HWND			m_hWnd;
+		UINT			m_nFrameCount;
+		UINT			m_nFramePosition;
+		bool			m_bIsInitialized;
+		bool			m_bPaused;
+		Gdiplus::PropertyItem*	m_pPropertyItem;
+		POINT			m_pt;
+	};
+
 	//  This function is called by the Windows function DispatchMessage()
 	//LRESULT CALLBACK WindowProcedure(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	ShadowWindow::CShadowBorder G_ShadowBorder;
@@ -3825,7 +3902,7 @@ namespace GUI{
 				G_ShadowBorder.SetPosition(0, 0);
 				
 				// GDI+
-				m_pAnimation = new AnimationDisplayer::CAnimationDisplayer(Convert::TToW(CWindowsManager::m_tszGifFileName).c_str());
+				m_pAnimation = new CAnimationDisplayer(Convert::TToW(CWindowsManager::m_tszGifFileName).c_str());
 
 				RECT rc = { 0 };
 				::GetClientRect(hWnd, &rc);
@@ -3895,7 +3972,7 @@ namespace GUI{
 			_TCHAR tzClassName[] = _T("PPSHUAIWINDOW");
 			HINSTANCE hInstance = GetModuleHandle(NULL);
 
-			AnimationDisplayer::GdiplusInitialize();
+			GdiplusDisplay::GdiplusInitialize();
 
 			if (GUI::WindowClassesRegister(hInstance, tzClassName, &CWindowsManager::WindowProcedure))
 			{
@@ -3905,14 +3982,14 @@ namespace GUI{
 		
 			uResult = GUI::StartupWindows(hWnd, SW_SHOW);
 
-			AnimationDisplayer::GdiplusExitialize();
+			GdiplusDisplay::GdiplusExitialize();
 
 			return uResult;
 		}
 
 	public:
 		//static ShadowWindow::CShadowBorder G_ShadowBorder;
-		static AnimationDisplayer::CAnimationDisplayer * CWindowsManager::m_pAnimation;
+		static CAnimationDisplayer * CWindowsManager::m_pAnimation;
 		static RECT CWindowsManager::m_rcWindow;
 		static _TCHAR m_tszGifFileName[MAX_PATH + 1];
 	
@@ -3922,8 +3999,408 @@ namespace GUI{
 	
 	RECT CWindowsManager::m_rcWindow = { 0 };
 	_TCHAR CWindowsManager::m_tszGifFileName[MAX_PATH + 1] = { 0 };
-	AnimationDisplayer::CAnimationDisplayer * CWindowsManager::m_pAnimation = NULL;
+	CAnimationDisplayer * CWindowsManager::m_pAnimation = NULL;
 
+	typedef struct tagEnumWindowInfo
+	{
+		HWND hWnd;
+		DWORD dwPid;
+	}ENUMWINDOWINFO, *PENUMWINDOWINFO;
+
+	__inline static BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam)
+	{
+		ENUMWINDOWINFO* pInfo = (ENUMWINDOWINFO*)lParam;
+		DWORD dwProcessId = 0;
+		GetWindowThreadProcessId(hWnd, &dwProcessId);
+
+		if (dwProcessId == pInfo->dwPid)
+		{
+			pInfo->hWnd = hWnd;
+			return FALSE;
+		}
+		return TRUE;
+	}
+
+	/*******************************************************
+	*函数功能:按照进程ID获取主窗口句柄
+	*函数参数:参数1：进程ID
+	*函数返回:HWND
+	*注意事项:无
+	*最后修改时间:2017/5/13
+	*******************************************************/
+	__inline static HWND GetHwndByProcessId(DWORD dwProcessId)
+	{
+		ENUMWINDOWINFO info = { 0 };
+		info.hWnd = NULL;
+		info.dwPid = dwProcessId;
+		EnumWindows(EnumWindowsProc, (LPARAM)&info);
+		return info.hWnd;
+	}
+
+	typedef struct tagSortDataInfo{
+		HWND hWnd;//Master Window
+		HWND hListCtrlWnd;//ListCtrl Window		
+		INT nColumnItem;//Column item index
+		bool bSortFlag;//Sort flag asc or desc
+		COLUMN_DATATYPE cdType;//Column sort type
+	}SORTDATAINFO, *PSORTDATAINFO;
+	// Sort the item in reverse alphabetical order.
+	__inline static int CALLBACK CompareProcess(LPARAM lParam1, LPARAM lParam2, LPARAM lParamSort)
+	{
+		// lParamSort contains a pointer to the list view control.
+		int nResult = 0;
+		LV_ITEM lvi = { 0 };
+		unsigned long ulX = 0;
+		unsigned long ulY = 0;
+
+		_TCHAR tzItem1[MAXWORD] = { 0 };
+		_TCHAR tzItem2[MAXWORD] = { 0 };
+
+		SORTDATAINFO * pSDI = (SORTDATAINFO *)lParamSort;
+		if (pSDI)
+		{
+			lvi.mask = LVIF_TEXT;
+			lvi.iSubItem = pSDI->nColumnItem;
+
+			lvi.cchTextMax = sizeof(tzItem1);
+			lvi.pszText = tzItem1;
+			lvi.iItem = lParam1;
+			ListView_GetItem(pSDI->hListCtrlWnd, &lvi);
+
+			lvi.cchTextMax = sizeof(tzItem2);
+			lvi.pszText = tzItem2;
+			lvi.iItem = lParam2;
+			ListView_GetItem(pSDI->hListCtrlWnd, &lvi);
+		}
+
+		switch (pSDI->cdType)
+		{
+		case CDT_NULL:
+			break;
+		case CDT_DEC:
+			ulX = _tcstoul(tzItem2, 0, 10);
+			ulY = _tcstoul(tzItem1, 0, 10);
+			nResult = ulX - ulY;
+			break;
+		case CDT_HEX:
+			ulX = _tcstoul(tzItem2, 0, 16);
+			ulY = _tcstoul(tzItem1, 0, 16);
+			nResult = ulX - ulY;
+			break;
+		case CDT_STRING:
+			nResult = lstrcmpi(tzItem2, tzItem1);
+			break;
+		case CDT_OTHERS:
+			break;
+		default:
+			break;
+		}
+
+		return ((pSDI->bSortFlag ? (nResult) : (-nResult)));
+	}
+	
+	LONG_PTR SetListCtrlSortDataInfo(HWND hListCtrlWnd, SORTDATAINFO * pSDI)
+	{
+		return SetWindowUserData(ListView_GetHeader(hListCtrlWnd), (LONG_PTR)pSDI);
+	}
+	SORTDATAINFO * GetListCtrlSortDataInfo(HWND hListCtrlWnd)
+	{
+		return (SORTDATAINFO *)GetWindowUserData(ListView_GetHeader(hListCtrlWnd));
+	}
+
+	LRESULT OnListCtrlNotify(HWND hListCtrlWnd, LPNMHDR lpNMHDR)
+	{
+		switch (lpNMHDR->code)
+		{
+		case NM_RCLICK:
+		{
+			if (ListView_GetNextItem(hListCtrlWnd, -1, LVNI_SELECTED) != -1)
+			{
+				HMENU hMenu = NULL;
+				POINT point = { 0 };
+				GetCursorPos(&point);
+
+				//动态创建弹出式菜单对象
+				hMenu = CreatePopupMenu();
+				if (hMenu)
+				{
+					//AppendMenu(hMenu, MF_STRING, IDM_OPEN, _T("打开进程"));
+					//TrackPopupMenu(hMenu, TPM_RIGHTBUTTON | TPM_VERPOSANIMATION | TPM_LEFTALIGN | TPM_VERTICAL, point.x, point.y, m_hWnd);
+					//DestroyMenu(hMenu);
+					//hMenu = NULL;
+				}
+			}
+		}
+		break;
+		//case LVN_COLUMNCLICK:
+		case HDN_ITEMCLICK:
+		{
+			_TCHAR tzText[MAXWORD] = { 0 };
+			_TCHAR tzValue[MAXWORD] = { 0 };
+			tstring::size_type stIndexPos = 0;
+			tstring::size_type stStartPos = 0;
+			tstring::size_type stFinalPos = 0;
+			
+			LPNMHEADER lpNMHEADER = (LPNMHEADER)lpNMHDR;
+			
+			SORTDATAINFO * pSDI = (SORTDATAINFO *)GetWindowUserData(ListView_GetHeader(hListCtrlWnd));
+			if (pSDI)
+			{
+				pSDI->hListCtrlWnd = hListCtrlWnd;
+				if (pSDI->nColumnItem != lpNMHEADER->iItem)
+				{
+					pSDI->nColumnItem = lpNMHEADER->iItem;
+					pSDI->bSortFlag = true;
+				}
+				else
+				{
+					pSDI->bSortFlag = (!pSDI->bSortFlag);
+				}
+
+				GetWindowText(ListView_GetHeader(pSDI->hListCtrlWnd), tzText, sizeof(tzText));
+				for (stIndexPos = 0;
+					stIndexPos < lpNMHEADER->iItem
+					&& (stStartPos = tstring(tzText).find(_T("|"), stStartPos + 1));
+				stIndexPos++){
+					;
+				}
+				stFinalPos = tstring(tzText).find(_T("|"), stStartPos + 1);
+				lstrcpyn(tzValue, (LPCTSTR)tzText + stStartPos + 1, stFinalPos - stStartPos);
+				pSDI->cdType = (COLUMN_DATATYPE)_ttol(tzValue);
+
+				ListView_SortItemsEx(pSDI->hListCtrlWnd, &CompareProcess, pSDI);
+			}
+		}
+		break;
+		case LVN_ITEMCHANGED:
+		{
+			if (ListView_GetNextItem(hListCtrlWnd, -1, LVNI_SELECTED) != -1)
+			{
+				//
+			}
+		}
+		break;
+		default:
+			break;
+		}
+
+		return 0;
+	}
+
+	typedef struct tagSelectProcessWindowInfo{
+		SORTDATAINFO * pSDI;
+		TSTRINGVECTORMAP * pTVMAP;
+	}SELECT_PROCESS_WINDOW_INFO, *PSELECT_PROCESS_WINDOW_INFO;
+
+	class CSelectProcessWindow {
+	public:
+		
+		CSelectProcessWindow()
+		{
+			this->ResetListData();
+		}
+		CSelectProcessWindow(TSTRINGVECTORMAP * pTVMAP)
+		{
+			this->ResetListData();
+			this->SetListData(pTVMAP);
+		}
+		virtual ~CSelectProcessWindow()
+		{
+		}
+
+	public:
+
+		//  This function is called by the Windows function DispatchMessage()
+		__inline static LRESULT CALLBACK WindowProcedure(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+		{
+			LRESULT lResult = 0;
+			// handle the messages
+			switch (message)
+			{
+			case WM_CREATE:
+			{
+				//::SetWindowLong(hWnd, GWL_STYLE, ::GetWindowLong(hWnd, GWL_STYLE) & (~WS_CAPTION));
+				//::SetWindowPos(hWnd, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_DRAWFRAME);
+
+				//添加阴影效果
+				//SetClassLong(hWnd, GCL_STYLE, GetClassLong(hWnd, GCL_STYLE) | CS_DROPSHADOW);
+			
+				SELECT_PROCESS_WINDOW_INFO * pSPWI = NULL;
+				pSPWI = (SELECT_PROCESS_WINDOW_INFO *)*(LPVOID *)(((CREATESTRUCT *)lParam)->lpCreateParams);
+				if (pSPWI)
+				{
+					if (pSPWI->pTVMAP && pSPWI->pSDI)
+					{
+						RECT rcRect = { 0 };
+						GetClientRect(hWnd, &rcRect);
+						HWND hListViewWnd = GUI::CreateCurtomWindow(GetModuleHandle(NULL),
+							WC_LISTVIEW,
+							_T("ListView"),
+							WS_CHILD | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | LVS_REPORT,
+							LVS_EX_GRIDLINES | LVS_EX_FULLROWSELECT,
+							rcRect, hWnd);
+						::SetWindowLong(hListViewWnd, GWL_STYLE, ::GetWindowLong(hListViewWnd, GWL_STYLE) | LVS_REPORT);
+						::SetWindowLong(hListViewWnd, GWL_EXSTYLE, ::GetWindowLong(hListViewWnd, GWL_EXSTYLE) | LVS_EX_GRIDLINES | LVS_EX_FULLROWSELECT);
+						ListView_SetExtendedListViewStyle(hListViewWnd, ListView_GetExtendedListViewStyle(hListViewWnd) | LVS_EX_GRIDLINES | LVS_EX_FULLROWSELECT);
+
+						SetWindowUserData(hWnd, (LONG_PTR)hListViewWnd);
+						//HWND hListViewWndAA = ((HWND)GetWindowUserData(hWnd));
+						
+						SetWindowUserData(hListViewWnd, (LONG_PTR)pSPWI->pTVMAP);
+						//TSTRINGVECTORMAP * pTVMAPAAA = ((TSTRINGVECTORMAP *)GetWindowUserData(hWnd));
+						
+						pSPWI->pSDI->hListCtrlWnd = hListViewWnd;
+						SetListCtrlSortDataInfo(hListViewWnd, pSPWI->pSDI);
+						//SORTDATAINFO * pSDIAA = GetListCtrlSortDataInfo(hListViewWnd);
+
+						SetWindowText(ListView_GetHeader(hListViewWnd), _T("|1|3"));
+
+						SIZE_T stIndex = 0;
+						SIZE_T stCount = 0;
+						SIZE_T stRowIdx = 0;
+						SIZE_T stColIdx = 0;
+						LV_ITEM lvi = { 0 };
+						LV_COLUMN lvc = { 0 };
+						TSTRINGVECTORMAP::iterator itEnd;
+						TSTRINGVECTORMAP::iterator itIdx;
+
+						stColIdx = 0;
+						itEnd = pSPWI->pTVMAP->end();
+						itIdx = pSPWI->pTVMAP->begin();
+						lvc.mask = LVCF_TEXT | LVCF_WIDTH;
+						for (; itIdx != itEnd; itIdx++, stColIdx++)
+						{
+							lvc.iSubItem = stColIdx;
+							lvc.pszText = (LPTSTR)itIdx->first.c_str();
+							lvc.cx = 120;
+							ListView_InsertColumn(hListViewWnd, stColIdx, &lvc);
+
+							stRowIdx = 0;
+							lvi.iSubItem = stColIdx;
+							lvi.mask = LVIF_TEXT;
+							stCount = itIdx->second.size();
+							for (stIndex = 0; stIndex < stCount; stIndex++, stRowIdx++)
+							{
+								lvi.iItem = stRowIdx;
+								lvi.pszText = (LPTSTR)itIdx->second.at(stIndex).c_str();
+								if (!lvi.iSubItem)
+								{
+									ListView_InsertItem(hListViewWnd, &lvi);
+								}
+								else
+								{
+									ListView_SetItem(hListViewWnd, &lvi);
+								}
+							}
+							lvi.mask = LVIF_PARAM;
+							lvi.lParam = stRowIdx;
+							ListView_SetItem(hListViewWnd, &lvi);
+						}
+
+						ShowWindow(hListViewWnd, SW_SHOW);
+					}
+				}
+			}
+			break;
+			case WM_NOTIFY:
+			{
+				OnListCtrlNotify((HWND)GetWindowUserData(hWnd), (LPNMHDR)lParam);
+			}
+			break;
+			case WM_LBUTTONDOWN:
+			{
+				GUI::DragMoveFull(hWnd);
+			}
+			break;
+			case WM_SIZE:
+			//case WM_EXITSIZEMOVE:
+			{
+				HWND hListViewWnd = (HWND)GetWindowUserData(hWnd);
+				if (hListViewWnd)
+				{
+					RECT rcWnd = { 0 };
+					GetClientRect(hWnd, &rcWnd);
+					MoveWindow(hListViewWnd, rcWnd.left, rcWnd.top, rcWnd.right - rcWnd.left, rcWnd.bottom - rcWnd.top, TRUE);
+					//SetWindowPos(hListViewWnd, HWND_NOTOPMOST, rcWnd.left, rcWnd.top, rcWnd.right - rcWnd.left, rcWnd.bottom - rcWnd.top, SWP_NOMOVE | SWP_NOSIZE);
+				}
+			}
+			break;
+			case WM_PAINT:
+			{
+				ULONG uARGB[2] = { ARGB(0xFF, 0x7F, 0xFF, 0x7F), ARGB(0xFF, 0xFF, 0x7F, 0x7F) };
+				RECT rcWnd = { 0 };
+				PAINTSTRUCT ps = { 0 };
+				RECT rcMemory = { 8, 8, 8, 8 };
+				HDC hDC = ::BeginPaint(hWnd, &ps);
+				GetClientRect(hWnd, &rcWnd);
+				GUI::DrawMemoryBitmap(hDC, hWnd, rcWnd.right, rcWnd.bottom, HBITMAPFromHWND(hWnd));
+
+				::EndPaint(hWnd, &ps);
+			}
+			break;
+			case WM_DESTROY:
+			{
+				// send a WM_QUIT to the message queue
+				PostQuitMessage(0);
+			}
+			break;
+			default:
+			{
+				// for messages that we don't deal with
+				return DefWindowProc(hWnd, message, wParam, lParam);
+			}
+			break;
+			}
+
+			return lResult;
+		}
+		
+		UINT_PTR RunApp()
+		{
+			HWND hWnd = NULL;
+			UINT_PTR uResult = 0;
+			CREATESTRUCT cs = { 0 };
+			_TCHAR tzClassName[] = _T("SelectProcessWindow");
+			HINSTANCE hInstance = GetModuleHandle(NULL);
+			RECT rcRect = { CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT + 300, CW_USEDEFAULT + 200 };
+
+			cs.lpCreateParams = &m_spwi;
+
+			if (GUI::WindowClassesRegister(hInstance, tzClassName, &CSelectProcessWindow::WindowProcedure))
+			{
+				//return 0;
+			}
+
+			hWnd = GUI::CreateCurtomWindow(hInstance, tzClassName, _T("SelectProcessWindow"), 
+				WS_OVERLAPPEDWINDOW, NULL, rcRect, NULL, NULL, &cs);
+			
+			uResult = GUI::StartupWindows(hWnd, SW_SHOW);
+
+			return uResult;
+		}
+
+		void ResetListData()
+		{
+			memset(&m_sdi, 0, sizeof(m_sdi));
+			m_tvmap.clear();			
+			m_spwi.pSDI = &m_sdi;
+			m_spwi.pTVMAP = &m_tvmap;
+		}
+
+		void SetListData(TSTRINGVECTORMAP * pTTMMAP)
+		{
+			m_tvmap.insert(pTTMMAP->begin(), pTTMMAP->end());
+		}
+
+		TSTRINGVECTORMAP * GetListData()
+		{
+			return &m_tvmap;
+		}
+	private:
+		SORTDATAINFO m_sdi;
+		TSTRINGVECTORMAP m_tvmap;
+		SELECT_PROCESS_WINDOW_INFO m_spwi;
+	};
 }
 }
 

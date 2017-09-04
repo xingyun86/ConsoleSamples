@@ -14,21 +14,46 @@
 #include "UNDOCAPI.h"
 
 namespace PPSHUAI{
-	
-#if !defined(_UNICODE) && !defined(UNICODE)
-#define TSTRING std::string
-#else
-#define TSTRING std::wstring
-#endif
-
-#define _tstring TSTRING
-#define tstring TSTRING
 
 typedef std::vector<std::string> STRINGVECTOR;
 typedef std::vector<std::wstring> WSTRINGVECTOR;
 
 typedef std::vector<STRINGVECTOR> STRINGVECTORVECTOR;
 typedef std::vector<WSTRINGVECTOR> WSTRINGVECTORVECTOR;
+
+typedef std::map<std::string, STRINGVECTOR> STRINGVECTORMAP;
+typedef std::map<std::wstring, WSTRINGVECTOR> WSTRINGVECTORMAP;
+
+typedef std::map<std::string, std::string> STRINGSTRINGMAP;
+typedef std::map<std::wstring, std::wstring> WSTRINGWSTRINGMAP;
+
+typedef std::map<std::string, STRINGSTRINGMAP> STRINGSTRINGMAPMAP;
+typedef std::map<std::wstring, WSTRINGWSTRINGMAP> WSTRINGWSTRINGMAPMAP;
+
+
+#define __MY_A(V)				#V
+#define __MY_W(V)				L##V
+
+#if !defined(_UNICODE) && !defined(UNICODE)
+#define __MY_T(V)				#V
+#define TSTRING					std::string
+#define TSTRINGVECTOR			STRINGVECTOR
+#define TSTRINGVECTORVECTOR		STRINGVECTORVECTOR
+#define TSTRINGTSTRINGMAP		STRINGSTRINGMAP
+#define TSTRINGTSTRINGMAPMAP	STRINGSTRINGMAPMAP
+#define TSTRINGVECTORMAP		STRINGVECTORMAP
+#else
+#define __MY_T(V)				L###V
+#define TSTRING					std::wstring
+#define TSTRINGVECTOR			WSTRINGVECTOR
+#define TSTRINGVECTORVECTOR		WSTRINGVECTORVECTOR
+#define TSTRINGTSTRINGMAP		WSTRINGWSTRINGMAP
+#define TSTRINGTSTRINGMAPMAP	WSTRINGWSTRINGMAPMAP
+#define TSTRINGVECTORMAP		WSTRINGVECTORMAP
+#endif // !defined(_UNICODE) && !defined(UNICODE)
+
+#define _tstring TSTRING
+#define tstring TSTRING
 
 __inline static std::string STRING_FORMAT_A(const CHAR * paFormat, ...)
 {
@@ -72,50 +97,42 @@ __inline static std::wstring STRING_FORMAT_W(const WCHAR * pwFormat, ...)
 	return W.c_str();
 }
 
-#if !defined(_UNICODE) && !defined(UNICODE)
-#define STRING_FORMAT STRING_FORMAT_A
-#define TSTRINGVECTOR STRINGVECTOR
-#else
-#define STRING_FORMAT STRING_FORMAT_W
-#define TSTRINGVECTOR WSTRINGVECTOR
-#endif
-
 //解析错误标识为字符串
-__inline static TSTRING ParseError(DWORD dwErrorCodes, HINSTANCE hInstance = NULL)
+__inline static std::string ParseErrorA(DWORD dwErrorCodes, HINSTANCE hInstance = NULL)
 {
 	BOOL bResult = FALSE;
 	HLOCAL hLocal = NULL;
-	TSTRING strErrorText = _T("");
+	std::string strErrorText = ("");
 
-	bResult = ::FormatMessage(
+	bResult = ::FormatMessageA(
 		FORMAT_MESSAGE_ALLOCATE_BUFFER |
 		FORMAT_MESSAGE_FROM_SYSTEM |
 		FORMAT_MESSAGE_IGNORE_INSERTS,
 		hInstance,
 		dwErrorCodes,
 		MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
-		(LPTSTR)&hLocal,
+		(LPSTR)&hLocal,
 		0,
 		NULL);
 	if (!bResult)
 	{
 		if (hInstance)
 		{
-			bResult = ::FormatMessage(
+			bResult = ::FormatMessageA(
 				FORMAT_MESSAGE_ALLOCATE_BUFFER |
 				FORMAT_MESSAGE_FROM_HMODULE |
 				FORMAT_MESSAGE_IGNORE_INSERTS,
 				hInstance,
 				dwErrorCodes,
 				MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
-				(LPTSTR)&hLocal,
+				(LPSTR)&hLocal,
 				0,
 				NULL);
 			if (!bResult)
 			{
 				// failed
 				// Unknown error code %08x (%d)
-				strErrorText = STRING_FORMAT(_T("Unknown error code 0x%08X"), dwErrorCodes);
+				strErrorText = STRING_FORMAT_A(("Unknown error code 0x%08X"), dwErrorCodes);
 			}
 		}
 	}
@@ -123,13 +140,13 @@ __inline static TSTRING ParseError(DWORD dwErrorCodes, HINSTANCE hInstance = NUL
 	if (bResult && hLocal)
 	{
 		// Success
-		LPTSTR pT = (LPTSTR)_tcschr((LPCTSTR)hLocal, _T('\r'));
+		LPSTR pT = (LPSTR)strchr((LPCSTR)hLocal, ('\r'));
 		if (pT != NULL)
 		{
 			//Lose CRLF
-			*pT = _T('\0');
+			*pT = ('\0');
 		}
-		strErrorText = (LPCTSTR)hLocal;
+		strErrorText = (LPCSTR)hLocal;
 	}
 
 	if (hLocal)
@@ -139,6 +156,201 @@ __inline static TSTRING ParseError(DWORD dwErrorCodes, HINSTANCE hInstance = NUL
 	}
 
 	return strErrorText;
+}
+//解析错误标识为字符串
+__inline static std::wstring ParseErrorW(DWORD dwErrorCodes, HINSTANCE hInstance = NULL)
+{
+	BOOL bResult = FALSE;
+	HLOCAL hLocal = NULL;
+	std::wstring strErrorText = (L"");
+
+	bResult = ::FormatMessageW(
+		FORMAT_MESSAGE_ALLOCATE_BUFFER |
+		FORMAT_MESSAGE_FROM_SYSTEM |
+		FORMAT_MESSAGE_IGNORE_INSERTS,
+		hInstance,
+		dwErrorCodes,
+		MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
+		(LPWSTR)&hLocal,
+		0,
+		NULL);
+	if (!bResult)
+	{
+		if (hInstance)
+		{
+			bResult = ::FormatMessageW(
+				FORMAT_MESSAGE_ALLOCATE_BUFFER |
+				FORMAT_MESSAGE_FROM_HMODULE |
+				FORMAT_MESSAGE_IGNORE_INSERTS,
+				hInstance,
+				dwErrorCodes,
+				MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
+				(LPWSTR)&hLocal,
+				0,
+				NULL);
+			if (!bResult)
+			{
+				// failed
+				// Unknown error code %08x (%d)
+				strErrorText = STRING_FORMAT_W((L"Unknown error code 0x%08X"), dwErrorCodes);
+			}
+		}
+	}
+
+	if (bResult && hLocal)
+	{
+		// Success
+		LPWSTR pT = (LPWSTR)wcschr((LPCWSTR)hLocal, (L'\r'));
+		if (pT != NULL)
+		{
+			//Lose CRLF
+			*pT = (L'\0');
+		}
+		strErrorText = (LPCWSTR)hLocal;
+	}
+
+	if (hLocal)
+	{
+		::LocalFree(hLocal);
+		hLocal = NULL;
+	}
+
+	return strErrorText;
+}
+
+__inline static std::string ToUpperCaseA(std::string & strA)
+{
+	return strupr((LPSTR)strA.c_str());
+}
+__inline static std::wstring ToUpperCaseW(std::wstring & strW)
+{
+	return _wcsupr((LPWSTR)strW.c_str());
+}
+
+__inline static std::string ToLowerCaseA(std::string & strA)
+{
+	return strlwr((LPSTR)strA.c_str());
+}
+__inline static std::wstring ToLowerCaseW(std::wstring & strW)
+{
+	return _wcsupr((LPWSTR)strW.c_str());
+}
+
+__inline static std::string GetFilePathDriveA(LPCSTR lpFileName)
+{
+	CHAR szDrive[_MAX_DRIVE] = { 0 };
+	CHAR szDir[_MAX_DIR] = { 0 };
+	CHAR szFname[_MAX_FNAME] = { 0 };
+	CHAR szExt[_MAX_EXT] = { 0 };
+
+	_splitpath(lpFileName, szDrive, szDir, szFname, szExt);
+
+	return szDrive;
+}
+__inline static std::wstring GetFilePathDriveW(LPCWSTR lpFileName)
+{
+	WCHAR szDrive[_MAX_DRIVE] = { 0 };
+	WCHAR szDir[_MAX_DIR] = { 0 };
+	WCHAR szFname[_MAX_FNAME] = { 0 };
+	WCHAR szExt[_MAX_EXT] = { 0 };
+
+	_wsplitpath(lpFileName, szDrive, szDir, szFname, szExt);
+
+	return szDrive;
+}
+__inline static std::string GetFilePathDirA(LPCSTR lpFileName)
+{
+	CHAR szDrive[_MAX_DRIVE] = { 0 };
+	CHAR szDir[_MAX_DIR] = { 0 };
+	CHAR szFname[_MAX_FNAME] = { 0 };
+	CHAR szExt[_MAX_EXT] = { 0 };
+
+	_splitpath(lpFileName, szDrive, szDir, szFname, szExt);
+
+	return szDir;
+}
+__inline static std::wstring GetFilePathDirW(LPCWSTR lpFileName)
+{
+	WCHAR szDrive[_MAX_DRIVE] = { 0 };
+	WCHAR szDir[_MAX_DIR] = { 0 };
+	WCHAR szFname[_MAX_FNAME] = { 0 };
+	WCHAR szExt[_MAX_EXT] = { 0 };
+
+	_wsplitpath(lpFileName, szDrive, szDir, szFname, szExt);
+
+	return szDir;
+}
+__inline static std::string GetFilePathExtA(LPCSTR lpFileName)
+{
+	CHAR szDrive[_MAX_DRIVE] = { 0 };
+	CHAR szDir[_MAX_DIR] = { 0 };
+	CHAR szFname[_MAX_FNAME] = { 0 };
+	CHAR szExt[_MAX_EXT] = { 0 };
+
+	_splitpath(lpFileName, szDrive, szDir, szFname, szExt);
+
+	return szExt;
+}
+__inline static std::wstring GetFilePathExtW(LPCWSTR lpFileName)
+{
+	WCHAR szDrive[_MAX_DRIVE] = { 0 };
+	WCHAR szDir[_MAX_DIR] = { 0 };
+	WCHAR szFname[_MAX_FNAME] = { 0 };
+	WCHAR szExt[_MAX_EXT] = { 0 };
+
+	_wsplitpath(lpFileName, szDrive, szDir, szFname, szExt);
+
+	return szExt;
+}
+__inline static std::string GetFilePathFnameA(LPCSTR lpFileName)
+{
+	CHAR szDrive[_MAX_DRIVE] = { 0 };
+	CHAR szDir[_MAX_DIR] = { 0 };
+	CHAR szFname[_MAX_FNAME] = { 0 };
+	CHAR szExt[_MAX_EXT] = { 0 };
+
+	_splitpath(lpFileName, szDrive, szDir, szFname, szExt);
+
+	return szFname;
+}
+__inline static std::wstring GetFilePathFnameW(LPCWSTR lpFileName)
+{
+	WCHAR szDrive[_MAX_DRIVE] = { 0 };
+	WCHAR szDir[_MAX_DIR] = { 0 };
+	WCHAR szFname[_MAX_FNAME] = { 0 };
+	WCHAR szExt[_MAX_EXT] = { 0 };
+
+	_wsplitpath(lpFileName, szDrive, szDir, szFname, szExt);
+
+	return szFname;
+}
+__inline static void SplitFilePathA(LPCSTR lpFileName, std::string & strDrive, 
+	std::string & strDir, std::string & strFname, std::string & strExt)
+{
+	CHAR szDrive[_MAX_DRIVE] = { 0 };
+	CHAR szDir[_MAX_DIR] = { 0 };
+	CHAR szFname[_MAX_FNAME] = { 0 };
+	CHAR szExt[_MAX_EXT] = { 0 };
+
+	_splitpath(lpFileName, szDrive, szDir, szFname, szExt);
+	strDrive = szDrive;
+	strDir = szDir;
+	strFname = szFname;
+	strExt = szExt;
+}
+__inline static void SplitFilePathW(LPCWSTR lpFileName, std::wstring & strDrive,
+	std::wstring & strDir, std::wstring & strFname, std::wstring & strExt)
+{
+	WCHAR szDrive[_MAX_DRIVE] = { 0 };
+	WCHAR szDir[_MAX_DIR] = { 0 };
+	WCHAR szFname[_MAX_FNAME] = { 0 };
+	WCHAR szExt[_MAX_EXT] = { 0 };
+
+	_wsplitpath(lpFileName, szDrive, szDir, szFname, szExt);
+	strDrive = szDrive;
+	strDir = szDir;
+	strFname = szFname;
+	strExt = szExt;
 }
 
 //初始化调试窗口显示
@@ -201,10 +413,29 @@ __inline static std::wstring GetCurrentSystemTimeW()
 }
 
 #if !defined(_UNICODE) && !defined(UNICODE)
-#define GetCurrentSystemTime GetCurrentSystemTimeA
+#define ToUpperCase				ToUpperCaseA
+#define ToLowerCase				ToLowerCaseA
+#define STRING_FORMAT			STRING_FORMAT_A
+#define GetCurrentSystemTime	GetCurrentSystemTimeA
+#define ParseError				ParseErrorA
+#define GetFilePathDrive		GetFilePathDriveA
+#define GetFilePathDir			GetFilePathDirA
+#define GetFilePathExt			GetFilePathExtA
+#define GetFilePathFname		GetFilePathFnameA
+#define SplitFilePath			SplitFilePathA
+
 #else
-#define GetCurrentSystemTime GetCurrentSystemTimeW
-#endif
+#define ToUpperCase				ToUpperCaseW
+#define ToLowerCase				ToLowerCaseW
+#define STRING_FORMAT			STRING_FORMAT_W
+#define GetCurrentSystemTime	GetCurrentSystemTimeW
+#define ParseError				ParseErrorW
+#define GetFilePathDrive		GetFilePathDriveW
+#define GetFilePathDir			GetFilePathDirW
+#define GetFilePathExt			GetFilePathExtW
+#define GetFilePathFname		GetFilePathFnameW
+#define SplitFilePath			SplitFilePathW
+#endif // !defined(_UNICODE) && !defined(UNICODE)
 
 __inline static LONGLONG GetCurrentTimerTicks()
 {
@@ -1804,7 +2035,45 @@ namespace String{
 }
 
 namespace SystemKernel{
-	
+	__inline static BOOL CreateAdvanceProcess(
+		LPCTSTR lpApplicationName,
+		LPTSTR lpCommandLine,
+		DWORD dwCreateFlags,
+		LPCTSTR lpCurrentDirectory = NULL,
+		LPSTARTUPINFO lpStartupInfo = NULL,
+		LPPROCESS_INFORMATION lpProcessInformation = NULL,
+		LPVOID lpEnvironment = NULL,
+		LPSECURITY_ATTRIBUTES lpProcessAttributes = NULL,
+		LPSECURITY_ATTRIBUTES lpThreadAttributes = NULL,
+		BOOL bInheritHandles = FALSE)
+	{
+		STARTUPINFO si = { 0 };
+		PROCESS_INFORMATION pi = { 0 };
+		LPSTARTUPINFO lpsi = &si;
+		LPPROCESS_INFORMATION lppi = &pi;
+
+		if (lpStartupInfo)
+		{
+			lpsi = lpStartupInfo;
+		}
+		if (lpProcessInformation)
+		{
+			lppi = lpProcessInformation;
+		}
+
+		return CreateProcess(
+			lpApplicationName,
+			lpCommandLine,
+			lpProcessAttributes,
+			lpThreadAttributes,
+			bInheritHandles,
+			dwCreateFlags,
+			lpEnvironment,
+			lpCurrentDirectory,
+			lpsi,
+			lppi
+			);
+	}
 	//获取Windows系统信息
 	__inline static VOID GetNativeSystemInformation(SYSTEM_INFO * psi)
 	{
@@ -1981,7 +2250,7 @@ namespace SystemKernel{
 	//Windows 10		= QueryFullProcessImageName()
 	///////////////////////////////////////////////////////////////////////
 
-	__inline static BOOL EnumModules_R3(std::map<DWORD, MODULEENTRY32> & memap, DWORD dwPID)
+	__inline static BOOL EnumModules_R3(std::map<DWORD, MODULEENTRY32> * pmemap, DWORD dwPID)
 	{
 		BOOL bRet = FALSE;
 		MODULEENTRY32 me = { 0 };
@@ -2008,7 +2277,7 @@ namespace SystemKernel{
 		// and display information about each module
 		do
 		{
-			memap.insert(std::map<DWORD, MODULEENTRY32>::value_type(me.th32ModuleID, me));
+			pmemap->insert(std::map<DWORD, MODULEENTRY32>::value_type(me.th32ModuleID, me));
 		} while (Module32Next(hSnapModule, &me));
 
 	__LEAVE_CLEAN__:
@@ -2020,7 +2289,7 @@ namespace SystemKernel{
 		return bRet;
 	}
 
-	__inline static BOOL EnumModules32_R3(std::map<DWORD, MODULEENTRY32> & memap, DWORD dwPID)
+	__inline static BOOL EnumModules32_R3(std::map<DWORD, MODULEENTRY32> * pmemap, DWORD dwPID)
 	{
 		BOOL bRet = FALSE;
 		MODULEENTRY32 me = { 0 };
@@ -2047,7 +2316,7 @@ namespace SystemKernel{
 		// and display information about each module
 		do
 		{
-			memap.insert(std::map<DWORD, MODULEENTRY32>::value_type(me.th32ModuleID, me));
+			pmemap->insert(std::map<DWORD, MODULEENTRY32>::value_type(me.th32ModuleID, me));
 		} while (Module32Next(hSnapModule, &me));
 
 	__LEAVE_CLEAN__:
@@ -2059,7 +2328,7 @@ namespace SystemKernel{
 		return bRet;
 	}
 
-	__inline static BOOL EnumProcess_R3(std::map<DWORD, PROCESSENTRY32> & pemap)
+	__inline static BOOL EnumProcess_R3(std::map<DWORD, PROCESSENTRY32> * ppemap)
 	{
 		BOOL bRet = FALSE;
 		PROCESSENTRY32 pe = { 0 };
@@ -2084,7 +2353,7 @@ namespace SystemKernel{
 
 		do
 		{
-			pemap.insert(std::map<DWORD, PROCESSENTRY32>::value_type(pe.th32ProcessID, pe));
+			ppemap->insert(std::map<DWORD, PROCESSENTRY32>::value_type(pe.th32ProcessID, pe));
 		} while (Process32Next(hSnapProcess, &pe));
 
 	__LEAVE_CLEAN__:
@@ -2096,7 +2365,7 @@ namespace SystemKernel{
 		return bRet;
 	}
 
-	__inline static BOOL EnumThread_R3(std::map<DWORD, THREADENTRY32> & temap, DWORD dwPID)
+	__inline static BOOL EnumThread_R3(std::map<DWORD, THREADENTRY32> * ptemap, DWORD dwPID)
 	{
 		BOOL bRet = FALSE;
 		THREADENTRY32 te = { 0 };
@@ -2120,7 +2389,7 @@ namespace SystemKernel{
 
 		do
 		{
-			temap.insert(std::map<DWORD, THREADENTRY32>::value_type(te.th32ThreadID, te));
+			ptemap->insert(std::map<DWORD, THREADENTRY32>::value_type(te.th32ThreadID, te));
 		} while (Thread32Next(hSnapThread, &te));
 
 	__LEAVE_CLEAN__:
@@ -2132,7 +2401,7 @@ namespace SystemKernel{
 		return bRet;
 	}
 
-	__inline static BOOL EnumHeapList_R3(std::map<ULONG_PTR, HEAPLIST32> & hlmap, DWORD dwPID)
+	__inline static BOOL EnumHeapList_R3(std::map<ULONG_PTR, HEAPLIST32> * phlmap, DWORD dwPID)
 	{
 		BOOL bRet = FALSE;
 		HEAPLIST32 hl = { 0 };
@@ -2156,7 +2425,7 @@ namespace SystemKernel{
 
 		do
 		{
-			hlmap.insert(std::map<ULONG_PTR, HEAPLIST32>::value_type(hl.th32HeapID, hl));
+			phlmap->insert(std::map<ULONG_PTR, HEAPLIST32>::value_type(hl.th32HeapID, hl));
 		} while (Heap32ListNext(hSnapHeapList, &hl));
 
 	__LEAVE_CLEAN__:
@@ -2168,90 +2437,6 @@ namespace SystemKernel{
 		return bRet;
 	}
 
-	__inline static NTSTATUS EnumProcessObject(
-		std::vector<OBJECT_BASIC_INFORMATION> * pobiv,
-		std::vector<OBJECT_NAME_INFORMATION> * poniv,
-		std::vector<OBJECT_TYPE_INFORMATION> * potiv,
-		DWORD dwProcessID)
-	{
-		BOOL bResult = FALSE;
-		NTSTATUS ntStatus = 0;
-		HANDLE hTargetHandle = 0;
-		HANDLE hSourceProcess = 0;
-		HANDLE hTargetProcess = 0;
-		DWORD dwProcessHandleCount = 0;
-		DWORD dwIndexX = 0;
-		DWORD dwIndexY = 0;
-		DWORD dwSourceHandleNumber = 0;
-		SYSTEM_HANDLE* pSystemHandle = 0;
-		OBJECT_BASIC_INFORMATION * pObjectBasicInformation = NULL;
-		OBJECT_NAME_INFORMATION * pObjectNameInformation = NULL;
-		OBJECT_TYPE_INFORMATION * pObjectTypeInformation = NULL;
-		DWORD dwSystemHandleInfomationSize = sizeof(SYSTEM_HANDLE_INFORMATION);
-		DWORD dwObjectBasicInformationSize = sizeof(OBJECT_BASIC_INFORMATION) + USN_PAGE_SIZE;
-		DWORD dwObjectNameInformationSize = sizeof(OBJECT_NAME_INFORMATION) + USN_PAGE_SIZE;
-		DWORD dwObjectTypeInformationSize = sizeof(OBJECT_TYPE_INFORMATION) + USN_PAGE_SIZE;
-
-		hTargetProcess = GetCurrentProcess();
-		pObjectBasicInformation = (OBJECT_BASIC_INFORMATION*)malloc(dwObjectBasicInformationSize);
-		pObjectNameInformation = (OBJECT_NAME_INFORMATION*)malloc(dwObjectNameInformationSize);
-		pObjectTypeInformation = (OBJECT_TYPE_INFORMATION*)malloc(dwObjectTypeInformationSize);
-
-		hSourceProcess = OpenProcess(PROCESS_ALL_ACCESS | PROCESS_DUP_HANDLE | PROCESS_SUSPEND_RESUME, FALSE, dwProcessID);
-		if (!hSourceProcess)
-		{
-			ntStatus = STATUS_UNSUCCESSFUL;
-			return ntStatus;
-		}
-		(NTSTATUS)FUNC_PROC(ZwSuspendProcess)(hSourceProcess);
-		(NTSTATUS)FUNC_PROC(ZwQueryInformationProcess)(hSourceProcess, ProcessHandleInformation, &dwProcessHandleCount, sizeof(dwProcessHandleCount), NULL);
-
-		//进程有效句柄从4开始,每次以4递增
-		dwSourceHandleNumber = sizeof(DWORD);
-
-		for (dwIndexY = 0; dwIndexY < dwProcessHandleCount; dwIndexY++, dwSourceHandleNumber += sizeof(dwSourceHandleNumber))
-		{
-			//判断是否为有效句柄，返回TRUE，就是有效句柄
-			bResult = DuplicateHandle(hSourceProcess, (HANDLE)dwSourceHandleNumber, hTargetProcess, &hTargetHandle, 0, FALSE, DUPLICATE_SAME_ACCESS);
-			if (!bResult)
-			{
-				continue;
-			}
-			else
-			{
-				memset(pObjectBasicInformation, 0, dwObjectBasicInformationSize);
-				memset(pObjectNameInformation, 0, dwObjectNameInformationSize);
-				memset(pObjectTypeInformation, 0, dwObjectTypeInformationSize);
-
-				(NTSTATUS)FUNC_PROC(ZwQueryObject)(hTargetHandle, ObjectBasicInformation, pObjectBasicInformation, dwObjectBasicInformationSize, NULL);
-				(NTSTATUS)FUNC_PROC(ZwQueryObject)(hTargetHandle, ObjectNameInformation, pObjectNameInformation, dwObjectNameInformationSize, NULL);
-				(NTSTATUS)FUNC_PROC(ZwQueryObject)(hTargetHandle, ObjectTypeInformation, pObjectTypeInformation, dwObjectTypeInformationSize, NULL);
-				if (pObjectNameInformation->Name.Length && pObjectTypeInformation)
-				{
-					if (pobiv)
-					{
-						pobiv->push_back(*pObjectBasicInformation);
-					}
-					if (poniv)
-					{
-						poniv->push_back(*pObjectNameInformation);
-					}
-					if (potiv)
-					{
-						potiv->push_back(*pObjectTypeInformation);
-					}
-				}
-				CloseHandle(hTargetHandle);
-				hTargetHandle = NULL;
-			}
-		}
-		(NTSTATUS)FUNC_PROC(ZwResumeProcess)(hSourceProcess);
-		CloseHandle(hSourceProcess);
-		hSourceProcess = NULL;
-
-		ntStatus = STATUS_SUCCESS;
-		return ntStatus;
-	}
 	__inline static	DWORD GetProcessIdByProcessName(const _TCHAR * ptProcessName)
 	{
 		DWORD dwPID = 0;
@@ -2259,11 +2444,10 @@ namespace SystemKernel{
 		std::map<DWORD, PROCESSENTRY32> pemap;
 		std::map<DWORD, PROCESSENTRY32>::iterator itEnd;
 		std::map<DWORD, PROCESSENTRY32>::iterator itIdx;
-
-
+		
 		lstrcpy(tzProcessName, ptProcessName);
 
-		EnumProcess_R3(pemap);
+		EnumProcess_R3(&pemap);
 
 		itEnd = pemap.end();
 		itIdx = pemap.begin();
@@ -2565,6 +2749,7 @@ namespace SystemKernel{
 }
 }
 
+#include "PEFileInfo.h"
 #include "WindowHeader.h"
 #include "MemoryHeader.h"
 #include "ListCtrlData.h"

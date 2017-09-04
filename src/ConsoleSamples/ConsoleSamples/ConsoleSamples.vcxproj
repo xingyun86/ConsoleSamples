@@ -153,8 +153,10 @@
     <ClInclude Include="CommonHeader.h" />
     <ClInclude Include="CryptyHeader.h" />
     <ClInclude Include="FileMapHeader.h" />
+    <ClInclude Include="HeapWalk.h" />
     <ClInclude Include="ListCtrlData.h" />
     <ClInclude Include="MemoryHeader.h" />
+    <ClInclude Include="PEFileInfo.h" />
     <ClInclude Include="SystemDataInfo.h" />
     <ClInclude Include="UNDOCAPI.h" />
     <ClInclude Include="WindowHeader.h" />
