@@ -1,7 +1,9 @@
 
 #include <windows.h>
-#pragma comment(lib, "msimg32.lib")
+#include <shlwapi.h>
 #include <tlhelp32.h>
+#pragma comment(lib, "shlwapi")
+
 
 #include <tchar.h>
 #include <sys/stat.h>
@@ -11,6 +13,8 @@
 #include <vector>
 #include <string>
 
+#include "MACROS.h"
+#include "BASE64.h"
 #include "UNDOCAPI.h"
 
 namespace PPSHUAI{
@@ -35,25 +39,18 @@ typedef std::map<std::wstring, WSTRINGWSTRINGMAP> WSTRINGWSTRINGMAPMAP;
 #define __MY_W(V)				L##V
 
 #if !defined(_UNICODE) && !defined(UNICODE)
-#define __MY_T(V)				#V
-#define TSTRING					std::string
 #define TSTRINGVECTOR			STRINGVECTOR
 #define TSTRINGVECTORVECTOR		STRINGVECTORVECTOR
 #define TSTRINGTSTRINGMAP		STRINGSTRINGMAP
 #define TSTRINGTSTRINGMAPMAP	STRINGSTRINGMAPMAP
 #define TSTRINGVECTORMAP		STRINGVECTORMAP
 #else
-#define __MY_T(V)				L###V
-#define TSTRING					std::wstring
 #define TSTRINGVECTOR			WSTRINGVECTOR
 #define TSTRINGVECTORVECTOR		WSTRINGVECTORVECTOR
 #define TSTRINGTSTRINGMAP		WSTRINGWSTRINGMAP
 #define TSTRINGTSTRINGMAPMAP	WSTRINGWSTRINGMAPMAP
 #define TSTRINGVECTORMAP		WSTRINGVECTORMAP
 #endif // !defined(_UNICODE) && !defined(UNICODE)
-
-#define _tstring TSTRING
-#define tstring TSTRING
 
 __inline static std::string STRING_FORMAT_A(const CHAR * paFormat, ...)
 {
@@ -218,22 +215,21 @@ __inline static std::wstring ParseErrorW(DWORD dwErrorCodes, HINSTANCE hInstance
 	return strErrorText;
 }
 
-__inline static std::string ToUpperCaseA(std::string & strA)
+__inline static std::string ToUpperCaseA(LPCSTR pA)
 {
-	return strupr((LPSTR)strA.c_str());
+	return strupr((LPSTR)pA);
 }
-__inline static std::wstring ToUpperCaseW(std::wstring & strW)
+__inline static std::wstring ToUpperCaseW(LPCWSTR pW)
 {
-	return _wcsupr((LPWSTR)strW.c_str());
+	return _wcsupr((LPWSTR)pW);
 }
-
-__inline static std::string ToLowerCaseA(std::string & strA)
+__inline static std::string ToLowerCaseA(LPCSTR pA)
 {
-	return strlwr((LPSTR)strA.c_str());
+	return strlwr((LPSTR)pA);
 }
-__inline static std::wstring ToLowerCaseW(std::wstring & strW)
+__inline static std::wstring ToLowerCaseW(LPCWSTR pW)
 {
-	return _wcsupr((LPWSTR)strW.c_str());
+	return _wcsupr((LPWSTR)pW);
 }
 
 __inline static std::string GetFilePathDriveA(LPCSTR lpFileName)
@@ -1223,73 +1219,91 @@ namespace FilePath{
 	__inline static
 		BOOL IsFileExist(LPCTSTR fileName)
 	{
-		WIN32_FIND_DATA	findData;
-
-		HANDLE hFile = FindFirstFile(fileName, &findData);
-		if (hFile != INVALID_HANDLE_VALUE)
+		HANDLE hFindFile = NULL;
+		WIN32_FIND_DATA	findData = { 0 };
+		
+		hFindFile = FindFirstFile(fileName, &findData);
+		if (hFindFile != INVALID_HANDLE_VALUE)
 		{
-			FindClose(hFile);
+			FindClose(hFindFile);
+			hFindFile = NULL;
 			return TRUE;
 		}
-		else
-		{
-			return FALSE;
-		}
+		
+		return FALSE;
 	}
 	__inline static
 		BOOL IsFileExistEx(LPCTSTR lpFileName)
 	{
-		BOOL bResult = FALSE;
-		GET_FILEEX_INFO_LEVELS gfil = GetFileExInfoStandard;
 		WIN32_FILE_ATTRIBUTE_DATA wfad = { 0 };
+		GET_FILEEX_INFO_LEVELS gfil = GetFileExInfoStandard;
+		
 		if (GetFileAttributes(lpFileName) != INVALID_FILE_ATTRIBUTES)
 		{
-			bResult = TRUE;
+			return TRUE;
 		}
 		else
 		{
 			if (GetFileAttributesEx(lpFileName, gfil, &wfad) &&
 				wfad.dwFileAttributes != INVALID_FILE_ATTRIBUTES)
 			{
-				bResult = TRUE;
+				return TRUE;
 			}
 		}
-		return bResult;
+		return FALSE;
 	}
 
-	//判断目录是否存在
-	__inline static BOOL IsDirectoryExists(LPCTSTR lpDirectory)
+	//////////////////////////////////////////////////////////////////////////
+	// 函数说明：遍历目录获取指定文件列表
+	// 参    数：输出的文件行内容数据、过滤后缀名、过滤的前缀字符
+	// 返 回 值：bool返回类型，成功返回true；失败返回false
+	// 编 写 者: ppshuai 20141112
+	//////////////////////////////////////////////////////////////////////////
+	__inline static BOOL DirectoryTraversal(std::map<SIZE_T, TSTRING> * pTTMAP, LPCTSTR lpDirectory = _T("."), LPCTSTR lpFormat = _T(".ext"))
 	{
-		BOOL bResult = TRUE;
-		struct _stat st = { 0 };
-		if ((_tstat(lpDirectory, &st) != 0) || (st.st_mode & S_IFDIR != S_IFDIR))
+		BOOL bResult = FALSE;
+		HANDLE hFindFile = NULL;
+		WIN32_FIND_DATA wfd = { 0 };
+		_TCHAR tRootPath[MAX_PATH + 1] = { 0 };
+		
+		//构建遍历根目录
+		wsprintf(tRootPath, TEXT("%s\\*%s"), lpDirectory, lpFormat);
+
+		//hFileHandle = FindFirstFileEx(tPathFile, FindExInfoStandard, &wfd, FindExSearchNameMatch, NULL, 0);
+		hFindFile = FindFirstFile(tRootPath, &wfd);
+		if (hFindFile != INVALID_HANDLE_VALUE)
 		{
-			bResult = FALSE;
+			pTTMAP->insert(std::map<SIZE_T, TSTRING>::value_type(pTTMAP->size(), TSTRING(TSTRING(lpDirectory) + _T("\\") + wfd.cFileName)));
+			while (FindNextFile(hFindFile, &wfd))
+			{
+				pTTMAP->insert(std::map<SIZE_T, TSTRING>::value_type(pTTMAP->size(), TSTRING(TSTRING(lpDirectory) + _T("\\") + wfd.cFileName)));
+			}
+			FindClose(hFindFile);
+			hFindFile = NULL;
+			bResult = TRUE;
 		}
 
 		return bResult;
 	}
+
 	//判断目录是否存在，若不存在则创建
-	__inline static BOOL CreateCascadeDirectory(LPCTSTR lpPathName,        //Directory name
-		LPSECURITY_ATTRIBUTES lpSecurityAttributes/* = NULL*/  // Security attribute
+	__inline static BOOL CreateCascadeDirectory(LPCTSTR lpPathName, //Directory name
+		LPSECURITY_ATTRIBUTES lpSecurityAttributes = NULL  // Security attribute
 		)
 	{
-		if (IsDirectoryExists(lpPathName))       //如果目录已存在，直接返回
-		{
-			return TRUE;
-		}
-
-		_TCHAR tPathSect[MAX_PATH] = { 0 };
+		_TCHAR *pToken = NULL;
+		_TCHAR tPathTemp[MAX_PATH] = { 0 };
 		_TCHAR tPathName[MAX_PATH] = { 0 };
+
 		_tcscpy(tPathName, lpPathName);
-		_TCHAR *pToken = _tcstok(tPathName, _T("\\"));
+		pToken = _tcstok(tPathName, _T("\\"));
 		while (pToken)
 		{
-			_sntprintf(tPathSect, sizeof(tPathSect) / sizeof(_TCHAR), _T("%s%s\\"), tPathSect, pToken);
-			if (!IsDirectoryExists(tPathSect))
+			_sntprintf(tPathTemp, sizeof(tPathTemp) / sizeof(_TCHAR), _T("%s%s\\"), tPathTemp, pToken);
+			if (!IsFileExistEx(tPathTemp))
 			{
 				//创建失败时还应删除已创建的上层目录，此次略
-				if (!CreateDirectory(tPathSect, lpSecurityAttributes))
+				if (!CreateDirectory(tPathTemp, lpSecurityAttributes))
 				{
 					_tprintf(_T("CreateDirectory Failed: %d\n"), GetLastError());
 					return FALSE;
@@ -1416,7 +1430,7 @@ namespace String{
 
 	__inline static size_t file_reader(std::string&data, std::string filename, std::string mode = "rb")
 	{
-#define DATA_BASE_SIZE	0xFFFF
+#define DATA_BASE_SIZE	0x10000
 
 		FILE * pF = 0;
 		size_t size = 0;
@@ -1429,6 +1443,7 @@ namespace String{
 				data.resize(data.size() + DATA_BASE_SIZE);
 				size += fread((void *)(data.c_str() + data.size() - DATA_BASE_SIZE), sizeof(char), DATA_BASE_SIZE, pF);
 			}
+			data.resize(size);
 			fclose(pF);
 			pF = 0;
 		}
@@ -1735,39 +1750,6 @@ namespace String{
 			result = true;
 		}
 		
-		return result;
-	}
-
-	//////////////////////////////////////////////////////////////////////////
-	// 函数说明：遍历目录获取指定文件列表
-	// 参    数：输出的文件行内容数据、过滤后缀名、过滤的前缀字符
-	// 返 回 值：bool返回类型，成功返回true；失败返回false
-	// 编 写 者: ppshuai 20141112
-	//////////////////////////////////////////////////////////////////////////
-	__inline static bool DirectoryTraversal(TSTRINGVECTOR * pStringVector, LPTSTR lpDirectory, LPTSTR lpFormat)
-	{
-		bool result = false;
-		HANDLE hFileHandle = NULL;
-		WIN32_FIND_DATA wfd = { 0 };
-		_TCHAR tPathFile[MAX_PATH + 1] = { 0 };
-
-		if (pStringVector)
-		{
-			pStringVector->clear();
-
-			wsprintf(tPathFile, TEXT("%s\\*.%s"), lpDirectory, lpFormat);
-
-			hFileHandle = FindFirstFile(tPathFile, &wfd);
-			if (hFileHandle != INVALID_HANDLE_VALUE)
-			{
-				pStringVector->push_back(wfd.cFileName);
-				while (FindNextFile(hFileHandle, &wfd))
-				{
-					pStringVector->push_back(wfd.cFileName);
-				}
-				result = true;
-			}
-		}
 		return result;
 	}
 
@@ -2748,10 +2730,11 @@ namespace SystemKernel{
 	}
 }
 }
-
 #include "PEFileInfo.h"
 #include "WindowHeader.h"
 #include "MemoryHeader.h"
 #include "ListCtrlData.h"
 #include "SystemDataInfo.h"
 #include "CryptyHeader.h"
+
+#include "CommonWindow.h"

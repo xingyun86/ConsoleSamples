@@ -45,6 +45,15 @@
     <ClInclude Include="PEFileInfo.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="BASE64.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MACROS.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CommonWindow.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">

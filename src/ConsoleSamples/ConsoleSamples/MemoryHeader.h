@@ -1,4 +1,6 @@
 
+#include "MACROS.h"
+
 namespace PPSHUAI{
 	namespace SystemKernel{
 		__inline static

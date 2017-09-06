@@ -150,8 +150,11 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="BASE64.h" />
     <ClInclude Include="CommonHeader.h" />
+    <ClInclude Include="CommonWindow.h" />
     <ClInclude Include="CryptyHeader.h" />
+    <ClInclude Include="MACROS.h" />
     <ClInclude Include="FileMapHeader.h" />
     <ClInclude Include="HeapWalk.h" />
     <ClInclude Include="ListCtrlData.h" />

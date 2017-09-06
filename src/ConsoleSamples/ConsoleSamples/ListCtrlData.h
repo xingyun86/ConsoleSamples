@@ -3,7 +3,7 @@
 #include <commctrl.h>
 
 #include <map>
-#include <string>
+#include "MACROS.h"
 
 
 __inline static void Init_List_Data(DWORD dwPID, DWORD dwWndID)

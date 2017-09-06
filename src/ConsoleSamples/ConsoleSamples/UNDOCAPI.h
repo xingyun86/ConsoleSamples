@@ -2,23 +2,10 @@
 #include <windows.h>
 
 #include <map>
-#include <string>
+#include "MACROS.h"
 
 /////////////////////////////////////////////////////////////////////////////////
 namespace PPSHUAI{
-#define __MY_A(V)				#V
-#define __MY_W(V)				L##V
-
-#if !defined(_UNICODE) && !defined(UNICODE)
-#define __MY_T(V)				#V
-#define TSTRING std::string
-#else
-#define TSTRING std::wstring
-#define __MY_T(V)				L###V
-#endif
-
-#define _tstring TSTRING
-#define tstring TSTRING
 
 		typedef LONG NTSTATUS;
 
@@ -425,7 +412,7 @@ namespace PPSHUAI{
 
 #define MAPKV_INIT_STR(NAME)  {__MY_T(#NAME), __MY_T(#NAME)}
 
-#define LIB_MAP_BEGIN(NAME)	static std::map<tstring, void *> G_##NAME_LIBMAP = {
+#define LIB_MAP_BEGIN(NAME)	static std::map<TSTRING, void *> G_##NAME_LIBMAP = {
 #define LIB_MAP_END()		};
 #define MAPKV_INIT_LIB(NAME)  {__MY_T(NAME), 0}
 
