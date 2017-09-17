@@ -11,11 +11,13 @@
 #pragma comment(lib, "msimg32.lib")
 #pragma comment(lib, "oleaut32.lib")
 #pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "comctl32.lib")
 
 #include <gdiplus.h>
 #pragma comment(lib, "gdiplus")
 
 #include <map>
+#include <vector>
 
 #include "MACROS.h"
 
@@ -1115,6 +1117,41 @@ namespace GUI{
 
 		return ((pSDI->bSortFlag ? (nResult) : (-nResult)));
 	}
+	
+	//图标索引列
+#define IMAGEICONINDEX_NAME "IMAGEICONINDEX_NAME"
+	__inline static void ImageListInit(HIMAGELIST hImageList, TSTRINGVECTORMAP * pTVMAP, LPCTSTR lpIconColumn)
+	{
+		LONG lIdx = 0;
+		SIZE_T stRowIdx = 0;
+		SHFILEINFO shfi = { 0 };
+		std::map<TSTRING, LONG> tlmap;
+		std::map<TSTRING, LONG>::iterator itFinder;
+		if (hImageList)
+		{
+			ImageList_RemoveAll(hImageList);
+
+			pTVMAP->insert(TSTRINGVECTORMAP::value_type(_T(IMAGEICONINDEX_NAME), TSTRINGVECTOR()));
+
+			for (stRowIdx = 0; stRowIdx < pTVMAP->at(lpIconColumn).size(); stRowIdx++)
+			{
+				itFinder = tlmap.find(pTVMAP->at(lpIconColumn).at(stRowIdx));
+				if (itFinder != tlmap.end())
+				{
+					lIdx = itFinder->second;
+				}
+				else
+				{
+					memset(&shfi, 0, sizeof(shfi));
+					SHGetFileInfo(pTVMAP->at(lpIconColumn).at(stRowIdx).c_str(), 0, &shfi, sizeof(shfi), SHGFI_DISPLAYNAME | SHGFI_ICON);
+					lIdx = ImageList_AddIcon(hImageList, shfi.hIcon);
+					tlmap.insert(std::map<TSTRING, LONG>::value_type(pTVMAP->at(lpIconColumn).at(stRowIdx), lIdx));
+				}
+
+				pTVMAP->at(_T(IMAGEICONINDEX_NAME)).push_back(STRING_FORMAT(_T("%ld"), lIdx));
+			}
+		}
+	}
 
 	__inline static void ListCtrlDeleteAllColumns(HWND hListViewWnd)
 	{
@@ -1124,7 +1161,7 @@ namespace GUI{
 	{
 		ListView_DeleteAllItems(hListViewWnd);
 	}
-	__inline static void ListCtrlInsertData(TSTRINGVECTORMAP * pTVMAP, HWND hListViewWnd, LPCTSTR lpListCtrlText = _T(""), LPCTSTR lpHeaderText = _T("|3|3|3|3|3|3|3|3|3|3"))
+	__inline static void ListCtrlInsertData(TSTRINGVECTORMAP * pTVMAP, HWND hListViewWnd, HIMAGELIST hImageList = NULL, LPCTSTR lpListCtrlText = _T(""), LPCTSTR lpHeaderText = _T("|3|3|3|3|3|3|3|3|3|3"))
 	{
 		SIZE_T stIndex = 0;
 		SIZE_T stCount = 0;
@@ -1134,7 +1171,7 @@ namespace GUI{
 		LV_COLUMN lvc = { 0 };
 		TSTRINGVECTORMAP::iterator itEnd;
 		TSTRINGVECTORMAP::iterator itIdx;
-
+		
 		if (lpListCtrlText)
 		{
 			SetWindowText(hListViewWnd, lpListCtrlText);
@@ -1151,6 +1188,12 @@ namespace GUI{
 		lvc.mask = LVCF_TEXT | LVCF_WIDTH;
 		for (; itIdx != itEnd; itIdx++, stColIdx++)
 		{
+			if (!itIdx->first.compare(_T("图标文件")) || !itIdx->first.compare(_T(IMAGEICONINDEX_NAME)))
+			{
+				stColIdx--;
+				continue;
+			}
+
 			lvc.iSubItem = stColIdx;
 			lvc.pszText = (LPTSTR)itIdx->first.c_str();
 			lvc.cx = 120;
@@ -1161,7 +1204,12 @@ namespace GUI{
 			lvi.mask = LVIF_TEXT;
 			stCount = itIdx->second.size();
 			for (stIndex = 0; stIndex < stCount; stIndex++, stRowIdx++)
-			{
+			{					
+				if (hImageList && pTVMAP->find(_T(IMAGEICONINDEX_NAME)) != pTVMAP->end())
+				{
+					lvi.mask |= LVIF_IMAGE;
+					lvi.iImage = _ttol(pTVMAP->at(_T(IMAGEICONINDEX_NAME)).at(stIndex).c_str());
+				}
 				lvi.iItem = stRowIdx;
 				lvi.pszText = (LPTSTR)itIdx->second.at(stIndex).c_str();
 				if (!lvi.iSubItem)
@@ -3856,6 +3904,545 @@ namespace GUI{
 		return TRUE;
 	}
 	
+	///////////////////////////////////////////////////////////////////////////////
+	
+	__inline static INT_PTR CALLBACK DlgWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+	{
+		switch (uMsg)
+		{
+		case WM_INITDIALOG:
+		{
+
+		}
+		break;
+		case WM_COMMAND:
+		{
+			switch (LOWORD(wParam))
+			{
+			case IDOK:
+			{
+				EndDialog(hWnd, LOWORD(wParam));
+			}
+			break;
+			case IDCANCEL:
+			{
+				EndDialog(hWnd, LOWORD(wParam));
+			}
+			break;
+			default:
+				break;
+			}
+		}
+		break;
+		default:
+			break;
+		}
+		return FALSE;
+	}
+
+	class CDlgItemTemplate
+	{
+	public:
+		CDlgItemTemplate()
+		{
+
+		}
+		CDlgItemTemplate(CDlgItemTemplate & dit)
+		{
+			this->Initialize(dit.dwStyle, dit.dwExStyle, dit.wX, dit.wY, dit.wCX, dit.wCY, dit.wID, dit.tCN.c_str(), dit.tTN.c_str(), dit.wCDAIT);
+		}
+		CDlgItemTemplate(DWORD _dwStyle, DWORD _dwExStyle, WORD _wX, WORD _wY, WORD _wCX, WORD _wCY, WORD _wID, LPCTSTR _tCN, LPCTSTR _tTN, WORD _wCDAIT)
+		{
+			this->Initialize(_dwStyle, _dwExStyle, _wX, _wY, _wCX, _wCY, _wID, _tCN, _tTN, _wCDAIT);
+		}
+
+		void Initialize(DWORD _dwStyle, DWORD _dwExStyle, WORD _wX, WORD _wY, WORD _wCX, WORD _wCY, WORD _wID, LPCTSTR _tCN, LPCTSTR _tTN, WORD _wCDAIT)
+		{
+			this->dwStyle = _dwStyle;
+			this->dwExStyle = _dwExStyle;
+			this->wX = _wX;
+			this->wY = _wY;
+			this->wCX = _wCX;
+			this->wCY = _wCY;
+			this->wID = _wID;
+			this->tCN = _tCN;
+			this->tTN = _tTN;
+			this->wCDAIT = _wCDAIT;
+		}
+
+	public:
+		DWORD dwStyle;
+		DWORD dwExStyle;
+		WORD wX;
+		WORD wY;
+		WORD wCX;
+		WORD wCY;
+		WORD wID;
+		TSTRING tCN;
+		TSTRING tTN;
+		WORD wCDAIT;
+	};
+
+	class CDlgTemplate
+	{
+	public:
+		CDlgTemplate()
+		{
+
+		}
+		CDlgTemplate(CDlgTemplate & cdt)
+		{
+			this->Initialize(cdt.dwStyle, cdt.dwExStyle, cdt.wCDIT, cdt.wX, cdt.wY, cdt.wCX, cdt.wCY, cdt.wMENU, cdt.tCN.c_str(), cdt.tTN.c_str(), cdt.wFS, cdt.tFN.c_str(), &cdt.SDITMAP);
+		}
+		CDlgTemplate(DWORD _dwStyle, DWORD _dwExStyle, WORD _wCDIT, WORD _wX, WORD _wY, WORD _wCX, WORD _wCY, WORD _wMENU, LPCTSTR _tCN, LPCTSTR _tTN, WORD _wFS, LPCTSTR _tFN, std::map<SIZE_T, CDlgItemTemplate> * _SDITMAP)
+		{
+			this->Initialize(_dwStyle, _dwExStyle, _wCDIT, _wX, _wY, _wCX, _wCY, _wMENU, _tCN, _tTN, _wFS, _tFN, _SDITMAP);
+		}
+
+		void Initialize(DWORD _dwStyle, DWORD _dwExStyle, WORD _wCDIT, WORD _wX, WORD _wY, WORD _wCX, WORD _wCY, WORD _wMENU, LPCTSTR _tCN, LPCTSTR _tTN, WORD _wFS, LPCTSTR _tFN, std::map<SIZE_T, CDlgItemTemplate> * _SDITMAP)
+		{
+			this->dwStyle = _dwStyle;
+			this->dwExStyle = _dwExStyle;
+			this->wCDIT = _wCDIT;
+			this->wX = _wX;
+			this->wY = _wY;
+			this->wCX = _wCX;
+			this->wCY = _wCY;
+			this->wMENU = _wMENU;
+			this->tCN = _tCN;
+			this->tTN = _tTN;
+			this->wFS = _wFS;
+			this->tFN = _tFN;
+			if (_SDITMAP)
+			{
+				SDITMAP.insert(_SDITMAP->begin(), _SDITMAP->end());
+			}
+		}
+
+	public:
+		DWORD dwStyle;
+		DWORD dwExStyle;
+		WORD wCDIT;
+		WORD wX;
+		WORD wY;
+		WORD wCX;
+		WORD wCY;
+		WORD wMENU;
+		TSTRING tCN;
+		TSTRING tTN;
+		WORD wFS;
+		TSTRING tFN;
+
+		std::map<SIZE_T, CDlgItemTemplate> SDITMAP;
+	};
+	
+	__inline static void * InitDlgData(SIZE_T * pstSize, std::map<SIZE_T, CDlgTemplate> * pSDTMAP)
+	{
+		BYTE * pbData = NULL;
+		SIZE_T stPlusSize = 0L;
+		std::map<SIZE_T, CDlgTemplate>::iterator itSDTEnd;
+		std::map<SIZE_T, CDlgTemplate>::iterator itSDTIdx;
+		std::map<SIZE_T, CDlgItemTemplate>::iterator itSDITEnd;
+		std::map<SIZE_T, CDlgItemTemplate>::iterator itSDITIdx;
+
+		itSDTEnd = pSDTMAP->end();
+		itSDTIdx = pSDTMAP->begin();
+		for (; itSDTIdx != itSDTEnd; itSDTIdx++)
+		{
+			stPlusSize = sizeof(itSDTIdx->second.dwStyle);
+			pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+			memcpy(pbData + (*pstSize), &itSDTIdx->second.dwStyle, stPlusSize);
+			(*pstSize) += stPlusSize;
+
+			stPlusSize = sizeof(itSDTIdx->second.dwExStyle);
+			pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+			memcpy(pbData + (*pstSize), &itSDTIdx->second.dwExStyle, stPlusSize);
+			(*pstSize) += stPlusSize;
+
+			stPlusSize = sizeof(itSDTIdx->second.wCDIT);
+			pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+			memcpy(pbData + (*pstSize), &itSDTIdx->second.wCDIT, stPlusSize);
+			(*pstSize) += stPlusSize;
+
+			stPlusSize = sizeof(itSDTIdx->second.wX);
+			pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+			memcpy(pbData + (*pstSize), &itSDTIdx->second.wX, stPlusSize);
+			(*pstSize) += stPlusSize;
+
+			stPlusSize = sizeof(itSDTIdx->second.wY);
+			pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+			memcpy(pbData + (*pstSize), &itSDTIdx->second.wY, stPlusSize);
+			(*pstSize) += stPlusSize;
+
+			stPlusSize = sizeof(itSDTIdx->second.wCX);
+			pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+			memcpy(pbData + (*pstSize), &itSDTIdx->second.wCX, stPlusSize);
+			(*pstSize) += stPlusSize;
+
+			stPlusSize = sizeof(itSDTIdx->second.wCY);
+			pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+			memcpy(pbData + (*pstSize), &itSDTIdx->second.wCY, stPlusSize);
+			(*pstSize) += stPlusSize;
+
+			stPlusSize = sizeof(itSDTIdx->second.wMENU);
+			pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+			memcpy(pbData + (*pstSize), &itSDTIdx->second.wMENU, stPlusSize);
+			(*pstSize) += stPlusSize;
+
+			stPlusSize = (Convert::TToW(itSDTIdx->second.tCN).length() + 1) * sizeof(WCHAR);
+			pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+			memcpy(pbData + (*pstSize), Convert::TToW(itSDTIdx->second.tCN).c_str(), stPlusSize);
+			(*pstSize) += stPlusSize;
+
+			stPlusSize = (Convert::TToW(itSDTIdx->second.tTN).length() + 1) * sizeof(WCHAR);
+			pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+			memcpy(pbData + (*pstSize), Convert::TToW(itSDTIdx->second.tTN).c_str(), stPlusSize);
+			(*pstSize) += stPlusSize;
+
+			stPlusSize = sizeof(itSDTIdx->second.wFS);
+			pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+			memcpy(pbData + (*pstSize), &itSDTIdx->second.wFS, stPlusSize);
+			(*pstSize) += stPlusSize;
+
+			stPlusSize = (Convert::TToW(itSDTIdx->second.tFN).length() + 1) * sizeof(WCHAR);
+			pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+			memcpy(pbData + (*pstSize), Convert::TToW(itSDTIdx->second.tFN).c_str(), stPlusSize);
+			(*pstSize) += stPlusSize;
+
+			itSDITEnd = itSDTIdx->second.SDITMAP.end();
+			itSDITIdx = itSDTIdx->second.SDITMAP.begin();
+			for (; itSDITIdx != itSDITEnd; itSDITIdx++)
+			{
+				stPlusSize = sizeof(itSDITIdx->second.dwStyle);
+				pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+				memcpy(pbData + (*pstSize), &itSDITIdx->second.dwStyle, stPlusSize);
+				(*pstSize) += stPlusSize;
+
+				stPlusSize = sizeof(itSDITIdx->second.dwExStyle);
+				pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+				memcpy(pbData + (*pstSize), &itSDITIdx->second.dwExStyle, stPlusSize);
+				(*pstSize) += stPlusSize;
+
+				stPlusSize = sizeof(itSDITIdx->second.wX);
+				pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+				memcpy(pbData + (*pstSize), &itSDITIdx->second.wX, stPlusSize);
+				(*pstSize) += stPlusSize;
+
+				stPlusSize = sizeof(itSDITIdx->second.wY);
+				pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+				memcpy(pbData + (*pstSize), &itSDITIdx->second.wY, stPlusSize);
+				(*pstSize) += stPlusSize;
+
+				stPlusSize = sizeof(itSDITIdx->second.wCX);
+				pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+				memcpy(pbData + (*pstSize), &itSDITIdx->second.wCX, stPlusSize);
+				(*pstSize) += stPlusSize;
+
+				stPlusSize = sizeof(itSDITIdx->second.wCY);
+				pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+				memcpy(pbData + (*pstSize), &itSDITIdx->second.wCY, stPlusSize);
+				(*pstSize) += stPlusSize;
+
+				stPlusSize = sizeof(itSDITIdx->second.wID);
+				pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+				memcpy(pbData + (*pstSize), &itSDITIdx->second.wID, stPlusSize);
+				(*pstSize) += stPlusSize;
+
+				////////////////////////////////////////////////////////////////////
+				stPlusSize = (Convert::TToW(itSDITIdx->second.tCN).length() + 1) * sizeof(WCHAR);
+				pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+				memcpy(pbData + (*pstSize), Convert::TToW(itSDITIdx->second.tCN).c_str(), stPlusSize);
+				(*pstSize) += stPlusSize;
+
+				stPlusSize = (Convert::TToW(itSDITIdx->second.tTN).length() + 1) * sizeof(WCHAR);
+				pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+				memcpy(pbData + (*pstSize), Convert::TToW(itSDITIdx->second.tTN).c_str(), stPlusSize);
+				(*pstSize) += stPlusSize;
+
+				stPlusSize = sizeof(itSDITIdx->second.wCDAIT);
+				pbData = (BYTE *)realloc(pbData, ((*pstSize) + stPlusSize) * sizeof(BYTE));
+				memcpy(pbData + (*pstSize), &itSDITIdx->second.wCDAIT, stPlusSize);
+				(*pstSize) += stPlusSize;
+			}
+		}
+		return pbData;
+	}
+	__inline static std::string InitDlgData(std::map<SIZE_T, CDlgTemplate> * pSDTMAP)
+	{
+		std::string strData("");
+		std::map<SIZE_T, CDlgTemplate>::iterator itSDTEnd;
+		std::map<SIZE_T, CDlgTemplate>::iterator itSDTIdx;
+		std::map<SIZE_T, CDlgItemTemplate>::iterator itSDITIEnd;
+		std::map<SIZE_T, CDlgItemTemplate>::iterator itSDITIdx;
+
+		itSDTEnd = pSDTMAP->end();
+		itSDTIdx = pSDTMAP->begin();
+		for (; itSDTIdx != itSDTEnd; itSDTIdx++)
+		{
+			strData.append((const char *)&itSDTIdx->second.dwStyle, sizeof(itSDTIdx->second.dwStyle));
+			strData.append((const char *)&itSDTIdx->second.dwExStyle, sizeof(itSDTIdx->second.dwExStyle));
+			strData.append((const char *)&itSDTIdx->second.wCDIT, sizeof(itSDTIdx->second.wCDIT));
+			strData.append((const char *)&itSDTIdx->second.wX, sizeof(itSDTIdx->second.wX));
+			strData.append((const char *)&itSDTIdx->second.wY, sizeof(itSDTIdx->second.wY));
+			strData.append((const char *)&itSDTIdx->second.wCX, sizeof(itSDTIdx->second.wCX));
+			strData.append((const char *)&itSDTIdx->second.wCY, sizeof(itSDTIdx->second.wCY));
+			strData.append((const char *)&itSDTIdx->second.wMENU, sizeof(itSDTIdx->second.wMENU));
+			strData.append((const char *)Convert::TToW(itSDTIdx->second.tCN).c_str(), (Convert::TToW(itSDTIdx->second.tCN).length() + 1) * sizeof(WCHAR) * sizeof(BYTE));
+			strData.append((const char *)Convert::TToW(itSDTIdx->second.tTN).c_str(), (Convert::TToW(itSDTIdx->second.tTN).length() + 1) * sizeof(WCHAR) * sizeof(BYTE));
+			strData.append((const char *)&itSDTIdx->second.wFS, sizeof(itSDTIdx->second.wFS) * sizeof(BYTE));
+			strData.append((const char *)Convert::TToW(itSDTIdx->second.tFN).c_str(), (Convert::TToW(itSDTIdx->second.tFN).length() + 1) * sizeof(WCHAR) * sizeof(BYTE));
+			
+			itSDITIEnd = itSDTIdx->second.SDITMAP.end();
+			itSDITIdx = itSDTIdx->second.SDITMAP.begin();
+			for (; itSDITIdx != itSDITIEnd; itSDITIdx++)
+			{
+				strData.append((const char *)&itSDITIdx->second.dwStyle, sizeof(itSDITIdx->second.dwStyle) * sizeof(BYTE));
+				strData.append((const char *)&itSDITIdx->second.dwExStyle, sizeof(itSDITIdx->second.dwExStyle) * sizeof(BYTE));
+				strData.append((const char *)&itSDITIdx->second.wX, sizeof(itSDITIdx->second.wX) * sizeof(BYTE));
+				strData.append((const char *)&itSDITIdx->second.wY, sizeof(itSDITIdx->second.wY) * sizeof(BYTE));
+				strData.append((const char *)&itSDITIdx->second.wCX, sizeof(itSDITIdx->second.wCX) * sizeof(BYTE));
+				strData.append((const char *)&itSDITIdx->second.wCY, sizeof(itSDITIdx->second.wCY) * sizeof(BYTE));
+				strData.append((const char *)&itSDITIdx->second.wID, sizeof(itSDITIdx->second.wID) * sizeof(BYTE));
+				strData.append((const char *)Convert::TToW(itSDITIdx->second.tCN).c_str(), (Convert::TToW(itSDITIdx->second.tCN).length() + 1) * sizeof(WCHAR) * sizeof(BYTE));
+				strData.append((const char *)Convert::TToW(itSDITIdx->second.tTN).c_str(), (Convert::TToW(itSDITIdx->second.tTN).length() + 1) * sizeof(WCHAR) * sizeof(BYTE));
+				strData.append((const char *)&itSDITIdx->second.wCDAIT, sizeof(itSDITIdx->second.wCDAIT) * sizeof(BYTE));
+			}
+		}
+		return strData;
+	}
+	__inline static void * InitParams()
+	{		
+		DLGTEMPLATE dt = { 0 };
+		DLGITEMTEMPLATE dit = { 0 };
+		BYTE * pbData = NULL;
+		SIZE_T stSize = 0L;
+		SIZE_T stPlusSize = 0L;
+		WORD wMenu = 0;
+		WORD wFontSize = 0;
+		WORD wCdit = 0;
+		WCHAR wClassName[MAX_PATH] = { 0 };
+		WCHAR wTitleName[MAX_PATH] = { 0 };
+		WCHAR wFontName[MAX_PATH] = { 0 };
+		SIZE_T stChildControlsNum = 2;
+		
+		stSize = 0;
+		stPlusSize = sizeof(DLGTEMPLATE);
+		pbData = (BYTE *)realloc(pbData, (stSize + stPlusSize) * sizeof(BYTE));
+		dt.style = DS_MODALFRAME | DS_3DLOOK | DS_SETFONT | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE;
+		dt.dwExtendedStyle = 0;
+		dt.cdit = stChildControlsNum;
+		dt.x = 0;
+		dt.y = 0;
+		dt.cx = 278;
+		dt.cy = 54;
+		memcpy(pbData + stSize, &dt, stPlusSize);
+		stSize += stPlusSize;
+
+		wMenu = 0;
+		stPlusSize = sizeof(wMenu);
+		pbData = (BYTE *)realloc(pbData, (stSize + stPlusSize) * sizeof(BYTE));
+		memcpy(pbData + stSize, &wMenu, stPlusSize);
+		stSize += stPlusSize;
+
+		wcscpy(wClassName, L"");
+		stPlusSize = (wcslen(wClassName) + 1) * sizeof(WCHAR);
+		pbData = (BYTE *)realloc(pbData, (stSize + stPlusSize) * sizeof(BYTE));
+		memcpy(pbData + stSize, wClassName, stPlusSize);
+		stSize += stPlusSize;
+		
+		wcscpy(wTitleName, L"Zipping");
+		stPlusSize = (wcslen(wTitleName) + 1) * sizeof(WCHAR);
+		pbData = (BYTE *)realloc(pbData, (stSize + stPlusSize) * sizeof(BYTE));
+		memcpy(pbData + stSize, wTitleName, stPlusSize);
+		stSize += stPlusSize;
+
+		wFontSize = 8;
+		stPlusSize = sizeof(wFontSize);
+		pbData = (BYTE *)realloc(pbData, (stSize + stPlusSize) * sizeof(BYTE));
+		memcpy(pbData + stSize, &wFontSize, stPlusSize);
+		stSize += stPlusSize;
+
+		wcscpy(wFontName, L"MS Sans Serif");
+		stPlusSize = (wcslen(wFontName) + 1) * sizeof(WCHAR);
+		pbData = (BYTE *)realloc(pbData, (stSize + stPlusSize) * sizeof(BYTE));
+		memcpy(pbData + stSize, wFontName, stPlusSize);
+		stSize += stPlusSize;
+
+		dit.style = BS_PUSHBUTTON | WS_CHILD | WS_VISIBLE;
+		dit.dwExtendedStyle = 0;
+		dit.x = 113;
+		dit.y = 32;
+		dit.cx = 50;
+		dit.cy = 14;
+		dit.id = IDCANCEL;
+		stPlusSize = sizeof(dit);
+		pbData = (BYTE *)realloc(pbData, (stSize + stPlusSize) * sizeof(BYTE));
+		memcpy(pbData + stSize, &dit, stPlusSize);
+		stSize += stPlusSize;
+
+		wcscpy(wClassName, L"Button");
+		stPlusSize = (wcslen(wClassName) + 1) * sizeof(WCHAR);
+		pbData = (BYTE *)realloc(pbData, (stSize + stPlusSize) * sizeof(BYTE));
+		memcpy(pbData + stSize, wClassName, stPlusSize);
+		stSize += stPlusSize;
+
+		wcscpy(wTitleName, L"Cancel");
+		stPlusSize = (wcslen(wTitleName) + 1) * sizeof(WCHAR);
+		pbData = (BYTE *)realloc(pbData, (stSize + stPlusSize) * sizeof(BYTE));
+		memcpy(pbData + stSize, wTitleName, stPlusSize);
+		stSize += stPlusSize;
+
+		wCdit = 0;
+		stPlusSize = sizeof(wCdit);
+		pbData = (BYTE *)realloc(pbData, (stSize + stPlusSize) * sizeof(BYTE));
+		memcpy(pbData + stSize, &wCdit, stPlusSize);
+		stSize += stPlusSize;
+
+		dit.style = WS_CHILD | WS_VISIBLE;
+		dit.dwExtendedStyle = 0;
+		dit.x = 7;
+		dit.y = 7;
+		dit.cx = 264;
+		dit.cy = 18;
+		dit.id = 1;
+		stPlusSize = sizeof(dit);
+		pbData = (BYTE *)realloc(pbData, (stSize + stPlusSize) * sizeof(BYTE));
+		memcpy(pbData + stSize, &dit, stPlusSize);
+		stSize += stPlusSize;
+
+		wcscpy(wClassName, L"msctls_progress32");
+		stPlusSize = (wcslen(wClassName) + 1) * sizeof(WCHAR);
+		pbData = (BYTE *)realloc(pbData, (stSize + stPlusSize) * sizeof(BYTE));
+		memcpy(pbData + stSize, wClassName, stPlusSize);
+		stSize += stPlusSize;
+
+		wcscpy(wTitleName, L"");
+		stPlusSize = (wcslen(wTitleName) + 1) * sizeof(WCHAR);
+		pbData = (BYTE *)realloc(pbData, (stSize + stPlusSize) * sizeof(BYTE));
+		memcpy(pbData + stSize, wTitleName, stPlusSize);
+		stSize += stPlusSize;
+
+		wCdit = 0;
+		stPlusSize = sizeof(wCdit);
+		pbData = (BYTE *)realloc(pbData, (stSize + stPlusSize) * sizeof(BYTE));
+		memcpy(pbData + stSize, &wCdit, stPlusSize);
+		stSize += stPlusSize;
+
+		return pbData;
+	}
+
+	__inline static INT_PTR CreateDialogBoxTTT()
+	{
+		HINSTANCE hInstance = NULL;
+#pragma pack(push,1)
+		struct TDlgItemTemplate { DWORD s, ex; short x, y, cx, cy; WORD id; };
+		struct TDlgTemplate { DWORD s, ex; WORD cdit; short x, y, cx, cy; };
+		struct TDlgItem1 { TDlgItemTemplate dli; WCHAR wclass[7]; WCHAR title[7]; WORD cdat; };
+		struct TDlgItem2 { TDlgItemTemplate dli; WCHAR wclass[18]; WCHAR title[1]; WORD cdat; };
+		struct TDlgData  { TDlgTemplate dlt; WORD menu; WCHAR wclass[1]; WCHAR title[8]; WORD fontsize; WCHAR font[14]; TDlgItem1 i1; TDlgItem2 i2; };
+		TDlgData dtp = {
+			{ DS_MODALFRAME | DS_3DLOOK | DS_SETFONT | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE, 0, 2, 0, 0, 278, 54 },
+			0, L"", L"Zipping", 8, L"MS Sans Serif",
+			{ { BS_PUSHBUTTON | WS_CHILD | WS_VISIBLE, 0, 113, 32, 50, 14, IDCANCEL }, L"BUTTON", L"Cancel", 0 },
+			{ { WS_CHILD | WS_VISIBLE, 0, 7, 7, 264, 18, 1 }, L"msctls_progress32", L"", 0 } };
+#pragma pack(pop)
+
+		hInstance = GetModuleHandle(NULL);
+
+		InitCommonControls();
+
+		int res = DialogBoxIndirectParam(hInstance, (DLGTEMPLATE*)&dtp, 0, (DLGPROC)DlgWindowProc, (LPARAM)NULL);
+		if (res == IDCANCEL) return 0;
+		return DialogBoxIndirectParam(hInstance, (DLGTEMPLATE*)&dtp, 0, (DLGPROC)DlgWindowProc, (LPARAM)NULL);
+	}
+
+	__inline static INT_PTR CreateDialogBox()
+	{
+		INT_PTR nRet = 0;
+		SIZE_T stSize = 0;
+		VOID * pbData = NULL;
+		HINSTANCE hInstance = NULL;
+		std::map<SIZE_T, CDlgTemplate> sdtmap;
+		std::map<SIZE_T, CDlgItemTemplate> sditmap;
+		std::map<SIZE_T, CDlgTemplate>::iterator itSDTEnd;
+		std::map<SIZE_T, CDlgTemplate>::iterator itSDTIdx;
+
+		sditmap.insert(std::map<SIZE_T, CDlgItemTemplate>::value_type(sditmap.size(),
+			CDlgItemTemplate(BS_PUSHBUTTON | WS_CHILD | WS_VISIBLE, 0, 
+			113, 32, 50, 14, IDCANCEL, WC_BUTTON, _T("Cancel"), 0)));
+		sditmap.insert(std::map<SIZE_T, CDlgItemTemplate>::value_type(sditmap.size(),
+			CDlgItemTemplate(WS_CHILD | WS_VISIBLE, 0, 
+			7, 7, 264, 18, 1, PROGRESS_CLASS, _T(""), 0)));
+		sdtmap.insert(std::map<SIZE_T, CDlgTemplate>::value_type(sdtmap.size(),
+			CDlgTemplate(DS_MODALFRAME | DS_3DLOOK | DS_SETFONT | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_MAXIMIZEBOX | WS_VISIBLE, 0, 
+			2, 0, 0, 278, 54, 0, _T(""), _T("Zipping"), 8, _T("MS Sans Serif"), &sditmap)));
+		
+		itSDTEnd = sdtmap.end();
+		itSDTIdx = sdtmap.begin();
+		for (; itSDTIdx != itSDTEnd; itSDTIdx++)
+		{
+			itSDTIdx->second.wCDIT = itSDTIdx->second.SDITMAP.size();
+		}
+
+		pbData = InitDlgData(&stSize, &sdtmap);
+
+		hInstance = GetModuleHandle(NULL);
+
+		InitCommonControls();
+
+		nRet = DialogBoxIndirectParam(hInstance, (DLGTEMPLATE*)pbData, 0, (DLGPROC)DlgWindowProc, (LPARAM)NULL);
+
+		free(pbData);
+		pbData = NULL;
+
+		return nRet;
+	}
+
+	__inline static INT_PTR CreateDialogBoxEx()
+	{
+		INT_PTR nResult = 0;
+		HINSTANCE hInstance = NULL;
+		std::string strDlgData((""));
+		std::map<SIZE_T, CDlgTemplate> sdtmap;
+		std::map<SIZE_T, CDlgItemTemplate> sditmap;
+		std::map<SIZE_T, CDlgTemplate>::iterator itSDTEnd;
+		std::map<SIZE_T, CDlgTemplate>::iterator itSDTIdx;
+
+		sditmap.insert(std::map<SIZE_T, CDlgItemTemplate>::value_type(sditmap.size(),
+			CDlgItemTemplate(BS_PUSHBUTTON | WS_CHILD | WS_VISIBLE, 0, 
+			63, 32, 50, 14, IDOK, WC_BUTTON, _T("Ok"), 0)));
+		sditmap.insert(std::map<SIZE_T, CDlgItemTemplate>::value_type(sditmap.size(),
+			CDlgItemTemplate(BS_PUSHBUTTON | WS_CHILD | WS_VISIBLE, 0, 
+			113, 32, 50, 14, IDCANCEL, WC_BUTTON, _T("Cancel"), 0)));
+		sditmap.insert(std::map<SIZE_T, CDlgItemTemplate>::value_type(sditmap.size(),
+			CDlgItemTemplate(WS_CHILD | WS_VISIBLE, 0, 
+			7, 7, 264, 18, 1, PROGRESS_CLASS, _T(""), 0)));
+		sdtmap.insert(std::map<SIZE_T, CDlgTemplate>::value_type(sdtmap.size(),
+			CDlgTemplate(DS_MODALFRAME | DS_3DLOOK | DS_SETFONT | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE, 0, 
+			2, 0, 0, 278, 54, 0, _T(""), _T("Zipping"), 8, _T("MS Sans Serif"), &sditmap)));
+
+		itSDTEnd = sdtmap.end();
+		itSDTIdx = sdtmap.begin();
+		for (; itSDTIdx != itSDTEnd; itSDTIdx++)
+		{
+			itSDTIdx->second.wCDIT = itSDTIdx->second.SDITMAP.size();
+		}
+
+		strDlgData = InitDlgData(&sdtmap);
+
+		hInstance = GetModuleHandle(NULL);
+
+		InitCommonControls();
+
+		nResult = DialogBoxIndirectParam(hInstance, (DLGTEMPLATE*)strDlgData.c_str(), 0, (DLGPROC)DlgWindowProc, (LPARAM)NULL);
+		if (nResult != IDCANCEL)
+		{
+			//nResult = DialogBoxIndirectParam(hInstance, (DLGTEMPLATE*)strDlgData.c_str(), 0, (DLGPROC)DlgWindowProc, (LPARAM)NULL);
+		}
+
+		return nResult;
+	}
+
 	__inline static BOOL WindowClassesRegister(HINSTANCE hInstance,
 		LPCTSTR lpClassName,
 		WNDPROC lpfnWndProc,

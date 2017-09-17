@@ -1,9 +1,9 @@
 
 #include <windows.h>
 #include <shlwapi.h>
-#include <tlhelp32.h>
 #pragma comment(lib, "shlwapi")
 
+#include <tlhelp32.h>
 
 #include <tchar.h>
 #include <sys/stat.h>
@@ -347,6 +347,15 @@ __inline static void SplitFilePathW(LPCWSTR lpFileName, std::wstring & strDrive,
 	strDir = szDir;
 	strFname = szFname;
 	strExt = szExt;
+}
+
+__inline static void * MemoryRealloc(void * p, size_t s)
+{
+	return realloc(p, s);
+}
+__inline static void MemoryRelease(void ** p)
+{
+	free((*p));	(*p) = 0;
 }
 
 //初始化调试窗口显示
@@ -2443,7 +2452,31 @@ namespace SystemKernel{
 		}
 		return dwPID;
 	}
+	__inline static BOOL GetProcessFileNameByProcessId(const DWORD dwProcessId, TSTRING & cstrPath)
+	{
+		HANDLE hProcess = NULL;
+		BOOL bSuccess = FALSE;
 
+		// 由于进程权限问题，有些进程是无法被OpenProcess的，如果将调用进程的权限
+		// 提到“调试”权限，则可能可以打开更多的进程
+		hProcess = OpenProcess(
+			PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
+			FALSE, dwProcessId);
+		if (hProcess)
+		{
+			std::map<DWORD, MODULEENTRY32> memap;
+			EnumModules_R3(&memap, dwProcessId);
+		}
+		
+		// 释放句柄
+		if (NULL != hProcess)
+		{
+			CloseHandle(hProcess);
+			hProcess = NULL;
+		}
+
+		return bSuccess;
+	}
 	__inline static HANDLE InitProcessHandle(DWORD dwPID)
 	{
 		// Open process
@@ -2738,3 +2771,4 @@ namespace SystemKernel{
 #include "CryptyHeader.h"
 
 #include "CommonWindow.h"
+#include "Network.h"

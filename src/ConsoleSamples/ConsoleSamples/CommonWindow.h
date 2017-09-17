@@ -467,10 +467,18 @@ namespace PPSHUAI
 				HWND hWnd = NULL;
 				UINT_PTR uResult = 0;
 				HMODULE hModule = NULL;
+				INITCOMMONCONTROLSEX iccex = { 0 };
 				_TCHAR tzClassName[] = _T("PPSHUAIWINDOW");
 				HINSTANCE hInstance = GetModuleHandle(NULL);
 
 				hModule = ::LoadLibrary(_T("msftedit.dll"));
+				
+				::InitCommonControls();
+
+				iccex.dwSize = sizeof(iccex);
+				// 将它设置为包括所有要在应用程序中使用的公共控件类。
+				iccex.dwICC = ICC_WIN95_CLASSES;
+				::InitCommonControlsEx(&iccex);
 
 				GdiplusDisplay::GdiplusInitialize();
 
@@ -756,11 +764,19 @@ namespace PPSHUAI
 				HWND hWnd = NULL;
 				UINT_PTR uResult = 0;
 				HMODULE hModule = NULL;
+				INITCOMMONCONTROLSEX iccex = { 0 };
 				_TCHAR tzClassName[] = _T("CFileIconWindow");
 				HINSTANCE hInstance = GetModuleHandle(NULL);
 				RECT rcRect = { CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT + 263, CW_USEDEFAULT + 177 };
 				
 				hModule = ::LoadLibrary(_T("msftedit.dll"));
+
+				::InitCommonControls();
+				
+				iccex.dwSize = sizeof(iccex);
+				// 将它设置为包括所有要在应用程序中使用的公共控件类。
+				iccex.dwICC = ICC_WIN95_CLASSES;
+				::InitCommonControlsEx(&iccex);
 
 				if (GUI::WindowClassesRegister(hInstance, tzClassName, &CFileIconWindow::WindowProcedure))
 				{
@@ -804,13 +820,19 @@ namespace PPSHUAI
 			{
 				this->ResetParam();
 			}
-			CSelectProcessWindow(std::map<TSTRING, std::vector<TSTRING>> * pTVMAP)
+			CSelectProcessWindow(std::map<TSTRING, std::vector<TSTRING>> * pTVMAP, HIMAGELIST * hImageList = NULL)
 			{
 				this->ResetParam();
 				this->SetListData(pTVMAP);
+				if (hImageList)
+				{
+					this->ClearParam();
+					m_hImageList = *hImageList;
+				}
 			}
 			virtual ~CSelectProcessWindow()
 			{
+				this->ClearParam();
 			}
 
 		public:
@@ -833,6 +855,7 @@ namespace PPSHUAI
 					//添加阴影效果
 					//SetClassLong(hWnd, GCL_STYLE, GetClassLong(hWnd, GCL_STYLE) | CS_DROPSHADOW);
 					HWND hListViewWnd = NULL;
+					HIMAGELIST hImageList = NULL;
 					SIZE_T * pSPWI = NULL;
 					GUI::SORTDATAINFO * pSDI = NULL;
 					std::map<TSTRING, std::vector<TSTRING>> * pTVMAP = NULL;
@@ -845,6 +868,7 @@ namespace PPSHUAI
 						GUI::SetWindowUserData(hWnd, (LONG_PTR)pTS);
 
 						pSDI = (GUI::SORTDATAINFO *)(pTS->at(_T("m_sdi")));
+						hImageList = (HIMAGELIST)(pTS->at(_T("m_hImageList")));
 						pTVMAP = (std::map<TSTRING, std::vector<TSTRING>> *)(pTS->at(_T("m_tvmap")));
 						if (pSDI && pTVMAP)
 						{
@@ -861,15 +885,19 @@ namespace PPSHUAI
 							ListView_SetExtendedListViewStyle(hListViewWnd, ListView_GetExtendedListViewStyle(hListViewWnd) | LVS_EX_GRIDLINES | LVS_EX_FULLROWSELECT);
 
 							pTS->insert(std::map<TSTRING, SIZE_T>::value_type(_T("hListViewWnd"), (SIZE_T)hListViewWnd));
-
+							
 							GUI::SetWindowUserData(hListViewWnd, (LONG_PTR)pTVMAP);
 
 							pSDI->hListCtrlWnd = hListViewWnd;
+
+							ListView_SetImageList(hListViewWnd, hImageList, LVSIL_NORMAL);
+							ListView_SetImageList(hListViewWnd, hImageList, LVSIL_SMALL);
+							
 							ListCtrlSetSortDataInfo(hListViewWnd, pSDI);
 
 							GUI::ListCtrlDeleteAllRows(hListViewWnd);
 							GUI::ListCtrlDeleteAllColumns(hListViewWnd);
-							GUI::ListCtrlInsertData(pTVMAP, hListViewWnd);
+							GUI::ListCtrlInsertData(pTVMAP, hListViewWnd, hImageList);
 
 							ShowWindow(hListViewWnd, SW_SHOW);
 						}
@@ -937,11 +965,19 @@ namespace PPSHUAI
 				HWND hWnd = NULL;
 				UINT_PTR uResult = 0;
 				HMODULE hModule = NULL;
+				INITCOMMONCONTROLSEX iccex = { 0 };
 				_TCHAR tzClassName[] = _T("SelectProcessWindow");
 				HINSTANCE hInstance = GetModuleHandle(NULL);
 				RECT rcRect = { CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT + 300, CW_USEDEFAULT + 200 };
 
 				hModule = ::LoadLibrary(_T("msftedit.dll"));
+
+				::InitCommonControls();
+
+				iccex.dwSize = sizeof(iccex);
+				// 将它设置为包括所有要在应用程序中使用的公共控件类。
+				iccex.dwICC = ICC_WIN95_CLASSES;
+				::InitCommonControlsEx(&iccex);
 
 				if (GUI::WindowClassesRegister(hInstance, tzClassName, &CSelectProcessWindow::WindowProcedure))
 				{
@@ -966,13 +1002,18 @@ namespace PPSHUAI
 			{
 				m_tsmap.clear();
 				m_tvmap.clear();
-				memset(&m_sdi, 0, sizeof(m_sdi));			
+				memset(&m_sdi, 0, sizeof(m_sdi));
+				m_hImageList = ImageList_Create(32, 32, ILC_COLOR8 | ILC_MASK, 3, 1);
 				m_tsmap.insert(std::map<TSTRING, SIZE_T>::value_type(_T("m_sdi"), (SIZE_T)&m_sdi));
 				m_tsmap.insert(std::map<TSTRING, SIZE_T>::value_type(_T("m_tvmap"), (SIZE_T)&m_tvmap));
+				m_tsmap.insert(std::map<TSTRING, SIZE_T>::value_type(_T("m_hImageList"), (SIZE_T)m_hImageList));
 				memset(&m_cs, 0, sizeof(m_cs));
 				m_cs.lpCreateParams = &m_tsmap;
 			}
-
+			void ClearParam()
+			{				
+				ImageList_Destroy(m_hImageList);
+			}
 			void SetListData(std::map<TSTRING, std::vector<TSTRING>> * pTTMMAP)
 			{
 				m_tvmap.insert(pTTMMAP->begin(), pTTMMAP->end());
@@ -984,9 +1025,13 @@ namespace PPSHUAI
 			}
 		private:
 			CREATESTRUCT m_cs;
-			GUI::SORTDATAINFO m_sdi;
-			std::map<TSTRING, std::vector<TSTRING>> m_tvmap;
 			std::map<TSTRING, SIZE_T> m_tsmap;
+			
+		private:
+			GUI::SORTDATAINFO m_sdi;
+			HIMAGELIST m_hImageList;
+			std::map<TSTRING, std::vector<TSTRING>> m_tvmap;
+			
 		};
 
 		class CCryptoWindow{
@@ -998,6 +1043,7 @@ namespace PPSHUAI
 			}
 			virtual ~CCryptoWindow()
 			{
+				this->ClearParam();
 			}
 
 		public:
@@ -1100,7 +1146,7 @@ namespace PPSHUAI
 							{
 								tstring tsData(dwSize, _T('\0'));
 								GetWindowText(hEdit1Wnd, (LPTSTR)tsData.c_str(), tsData.size());
-								String::file_writer(Convert::TToA(tsData), FilePath::GetProgramPath() + _T("decode.txt"));
+								String::file_writer(Convert::TToA(tsData), Convert::TToA(FilePath::GetProgramPath() + _T("decode.txt")));
 								::MessageBoxEx(NULL, tstring(_T("保存解码信息到：") + FilePath::GetProgramPath() + _T("decode.txt")).c_str(), _T("提示"), MB_ICONINFORMATION, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT));
 							}
 						}
@@ -1112,7 +1158,7 @@ namespace PPSHUAI
 							{
 								tstring tsData(dwSize, _T('\0'));
 								GetWindowText(hEdit2Wnd, (LPTSTR)tsData.c_str(), tsData.size());
-								String::file_writer(Convert::TToA(tsData), PPSHUAI::FilePath::GetProgramPath() + _T("encode.txt"));
+								String::file_writer(Convert::TToA(tsData), Convert::TToA(PPSHUAI::FilePath::GetProgramPath() + _T("encode.txt")));
 								::MessageBoxEx(NULL, tstring(_T("保存编码信息到：") + FilePath::GetProgramPath() + _T("encode.txt")).c_str(), _T("提示"), MB_ICONINFORMATION, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT));
 							}
 						}
@@ -1163,21 +1209,21 @@ namespace PPSHUAI
 							std::string strEncodeData("");
 							if (PtInRect(&rcEdit1, point))
 							{
-								String::file_reader(strDecodeData, ttmap.begin()->first.c_str());
+								String::file_reader(strDecodeData, Convert::TToA(ttmap.begin()->first).c_str());
 
-								SetWindowText(hEdit1Wnd, strDecodeData.c_str());
+								SetWindowText(hEdit1Wnd, Convert::AToT(strDecodeData).c_str());
 
 								strEncodeData = CRYPTO::Base64::base64Encode((const unsigned char *)strDecodeData.c_str(), strDecodeData.length());
-								SetWindowText(hEdit2Wnd, strEncodeData.c_str());
+								SetWindowText(hEdit2Wnd, Convert::AToT(strEncodeData).c_str());
 							}
 							else if (PtInRect(&rcEdit2, point))
 							{
-								String::file_reader(strEncodeData, ttmap.begin()->first.c_str());
-								SetWindowText(hEdit2Wnd, strEncodeData.c_str());
+								String::file_reader(strEncodeData, Convert::TToA(ttmap.begin()->first).c_str());
+								SetWindowText(hEdit2Wnd, Convert::AToT(strEncodeData).c_str());
 								
 								strDecodeData = CRYPTO::Base64::base64Decode(strEncodeData);
 																
-								SetWindowText(hEdit1Wnd, strDecodeData.c_str());
+								SetWindowText(hEdit1Wnd, Convert::AToT(strDecodeData).c_str());
 							}
 						}
 					}
@@ -1247,11 +1293,19 @@ namespace PPSHUAI
 				HWND hWnd = NULL;				
 				UINT_PTR uResult = 0;
 				HMODULE hModule = NULL;
+				INITCOMMONCONTROLSEX iccex = { 0 };
 				_TCHAR tzClassName[] = _T("CCryptoWindow");
 				HINSTANCE hInstance = GetModuleHandle(NULL);
 				RECT rcRect = { CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT + 300, CW_USEDEFAULT + 200 };
 				
 				hModule = ::LoadLibrary(_T("msftedit.dll"));
+
+				::InitCommonControls();
+
+				iccex.dwSize = sizeof(iccex);
+				// 将它设置为包括所有要在应用程序中使用的公共控件类。
+				iccex.dwICC = ICC_WIN95_CLASSES;
+				::InitCommonControlsEx(&iccex);
 
 				if (GUI::WindowClassesRegister(hInstance, tzClassName, &CCryptoWindow::WindowProcedure))
 				{
@@ -1278,9 +1332,14 @@ namespace PPSHUAI
 				m_cs.lpCreateParams = &m_tsmap;
 			}
 
+			void ClearParam()
+			{
+
+			}
 		private:
 			CREATESTRUCT m_cs;
 			std::map<TSTRING, SIZE_T> m_tsmap;
+
 		};
 
 #define DEFAULT_ELAPSE_TIMEOUT	750 //750ms
@@ -1537,11 +1596,19 @@ namespace PPSHUAI
 				HWND hWnd = NULL;
 				UINT_PTR uResult = 0;
 				HMODULE hModule = NULL;
+				INITCOMMONCONTROLSEX iccex = { 0 };
 				_TCHAR tzClassName[] = _T("CAnimationWindow");
 				HINSTANCE hInstance = GetModuleHandle(NULL);
 				RECT rcRect = { CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT + 300, CW_USEDEFAULT + 200 };
 
 				hModule = ::LoadLibrary(_T("msftedit.dll"));
+				
+				::InitCommonControls();
+
+				iccex.dwSize = sizeof(iccex);
+				// 将它设置为包括所有要在应用程序中使用的公共控件类。
+				iccex.dwICC = ICC_WIN95_CLASSES;
+				::InitCommonControlsEx(&iccex);
 
 				if (GUI::WindowClassesRegister(hInstance, tzClassName, &CAnimationWindow::WindowProcedure))
 				{

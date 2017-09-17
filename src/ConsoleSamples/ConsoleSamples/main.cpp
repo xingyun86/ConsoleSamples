@@ -51,6 +51,133 @@ BOOL GetIconDirectory(HMODULE hMod, WORD wId)
 	return TRUE;
 }
 
+
+BOOL DosPathToNtPath(LPTSTR pszDosPath, LPTSTR pszNtPath)
+{
+	TCHAR			szDriveStr[500];
+	TCHAR			szDrive[3];
+	TCHAR			szDevName[100];
+	INT				cchDevName;
+	INT				i;
+
+	//检查参数
+	if (!pszDosPath || !pszNtPath)
+		return FALSE;
+
+	//获取本地磁盘字符串
+	if (GetLogicalDriveStrings(sizeof(szDriveStr), szDriveStr))
+	{
+		for (i = 0; szDriveStr[i]; i += 4)
+		{
+			if (!lstrcmpi(&(szDriveStr[i]), _T("A:\\")) || !lstrcmpi(&(szDriveStr[i]), _T("B:\\")))
+				continue;
+
+			szDrive[0] = szDriveStr[i];
+			szDrive[1] = szDriveStr[i + 1];
+			szDrive[2] = '\0';
+			if (!QueryDosDevice(szDrive, szDevName, 100))//查询 Dos 设备名
+				return FALSE;
+
+			cchDevName = lstrlen(szDevName);
+			if (_tcsnicmp(pszDosPath, szDevName, cchDevName) == 0)//命中
+			{
+				lstrcpy(pszNtPath, szDrive);//复制驱动器
+				lstrcat(pszNtPath, pszDosPath + cchDevName);//复制路径
+
+				return TRUE;
+			}
+		}
+	}
+
+	lstrcpy(pszNtPath, pszDosPath);
+
+	return FALSE;
+}
+
+#include <psapi.h>
+#pragma comment(lib, "psapi")
+
+//获取进程完整路径
+BOOL GetProcessFullPath(DWORD dwPID, TCHAR pszFullPath[MAX_PATH])
+{
+	TCHAR		szImagePath[MAX_PATH];
+	HANDLE		hProcess;
+
+	if (!pszFullPath)
+		return FALSE;
+
+	pszFullPath[0] = _T('\0');
+	hProcess = OpenProcess(PROCESS_QUERY_INFORMATION, 0, dwPID);
+	if (!hProcess)
+		return FALSE;
+
+	if (!GetProcessImageFileName(hProcess, szImagePath, MAX_PATH))
+	{
+		CloseHandle(hProcess);
+		return FALSE;
+	}
+
+	if (!DosPathToNtPath(szImagePath, pszFullPath))
+	{
+		CloseHandle(hProcess);
+		return FALSE;
+	}
+
+	CloseHandle(hProcess);
+
+	return TRUE;
+}
+
+#include <pthread.h>
+bool g_flag = false;
+typedef struct tagThreadParams
+{
+	CHAR cData[MAXCHAR];
+	INT nStart;
+	INT nFinal;
+}ThreadParams, *PThreadParams;
+
+void * PTW32_CDECL ThreadTest(void * pv)
+{
+	INT nIndex = 0;
+	void * presult = 0;
+	ThreadParams tp = { 0 };
+	if (pv)
+	{
+		memcpy(&tp, pv, sizeof(tp));
+		
+		free(pv);
+
+		//printf("[线程%lu][%d-%d] start running！\r\n", GetCurrentThreadId(), tp.nStart, tp.nFinal);
+
+		for (nIndex = tp.nStart; nIndex < tp.nFinal; nIndex++)
+		{
+			std::string strPort = PPSHUAI::NETWORK::NameFromPort(nIndex);
+			if (!strPort.length())
+			{
+				strPort.resize(MAXBYTE, ('\0'));
+				sprintf((char *)strPort.c_str(), ("%d"), nIndex);
+				strPort = strPort.c_str();
+			}
+			strPort.append(PPSHUAI::STRING_FORMAT_A(("(%d)"), nIndex));
+			bool bFlag = PPSHUAI::NETWORK::access_network_async(tp.cData, nIndex);
+			if (bFlag)
+			{
+				printf("[线程%lu] %s is open.\r\n", GetCurrentThreadId(), strPort.c_str());
+			}
+			else
+			{
+				printf("[线程%lu] %s is not open.\r\n", GetCurrentThreadId(), strPort.c_str());
+			}
+			Sleep(300);
+		}
+	
+		//printf("[线程%lu][%d-%d] leave running！\r\n", GetCurrentThreadId(), tp.nStart, tp.nFinal);
+	}
+	
+	return presult;
+}
+
 #if !defined(_CONSOLE) && !defined(CONSOLE)
 int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCmdLine, INT nCmdShow)
 #else
@@ -58,10 +185,70 @@ int _tmain(int argc, _TCHAR *argv[])
 #endif //#if !defined(_CONSOLE) && !defined(CONSOLE)
 {
 	PPSHUAI::SystemKernel::PromotingPrivilege(SE_DEBUG_NAME, TRUE);
+	{
+		int i = 0;
+		std::string strIpAddr = ("47.93.195.43");
+		
+		SOCKET_STARTUP(2, 2);
+		
+		g_flag = true;
+		INT nAllCount = (MAXWORD + 1);
+		INT nUnitSize = MINCHAR;
+		ThreadParams tp = { ("47.93.195.43"), 0, 0 };
+		ThreadParams * ptp = 0;
+		while (tp.nFinal < nAllCount)
+		{
+			pthread_t ptId = { 0 };
+
+			ptp = (ThreadParams *)realloc(0, sizeof(ThreadParams) * sizeof(BYTE));
+			tp.nStart = tp.nFinal;
+			if (nAllCount - tp.nFinal >= nUnitSize)
+			{
+				tp.nFinal = tp.nStart + nUnitSize;
+			}
+			else
+			{
+				tp.nFinal = tp.nStart + (nAllCount - tp.nStart) % nUnitSize;
+			}
+			memcpy(ptp, &tp, sizeof(tp));
+			pthread_create(&ptId, 0, ThreadTest, ptp);
+			pthread_detach(ptId);
+		}
+		
+		getch();
+		g_flag = true;
+		getch();
+
+		SOCKET_CLEANUP();
+		
+		return 0;
+	}
+	//tttmain();
+	//return 0;
 	//PPSHUAI::SystemKernel::PromotingPrivilege(SE_LOCK_MEMORY_NAME, TRUE);
 	//CoInitialize(NULL);
 	//OleInitialize(NULL);
 	//PPSHUAI::GUI::ImagesRenderDisplay(NULL, NULL, _T("D:\\1.jpg"));
+	{
+		WORD temp[256] = { 0 };
+		DLGTEMPLATE *pDlgTemp = (DLGTEMPLATE *)temp;
+		
+		pDlgTemp->style = WS_OVERLAPPEDWINDOW | WS_CAPTION | WS_SYSMENU | DS_CENTER | DS_MODALFRAME;
+
+		pDlgTemp->dwExtendedStyle = 0;
+
+		pDlgTemp->cdit = 0;
+
+		pDlgTemp->x = 0;
+
+		pDlgTemp->y = 0;
+
+		pDlgTemp->cx = 160;
+
+		pDlgTemp->cy = 80;
+
+		//return DialogBoxIndirectParam(GetModuleHandle(NULL), pDlgTemp, NULL, PPSHUAI::GUI::DlgWindowProc, 0);
+	}
 	{
 		/*BOOL bRestult = PathFileExists(_T("D:\\A\\"));
 		LPCTSTR lpT = RT_CURSOR;
@@ -73,7 +260,7 @@ int _tmain(int argc, _TCHAR *argv[])
 		ExtractIconEx(_T("D:\\Tencent\\WeChat\\WeChat.exe"), 0, &hIconLarge, &hIconSmall, 1);
 		DWORD dwError = GetLastError();
 		dwError = 0;
-		PPSHUAI::PE::EnumPEResources(_T("D:\\ttss.exe"));
+		PPSHUAI::PE::EnumPEResources(_T("D:\\duiqq.exe"));
 
 		return 0;*/
 
@@ -84,11 +271,14 @@ int _tmain(int argc, _TCHAR *argv[])
 		}
 	}
 	{
+		SHFILEINFO shfi = { 0 };
+		SHGetFileInfo(_T("D:\\DevelopmentEnvironment\\CodeBlocks\\Tools\\Python27\\Google\\Chrome\\Application\\chrome.exe"), 0, &shfi, sizeof(shfi), SHGFI_DISPLAYNAME | SHGFI_ICON);
 		PPSHUAI::TSTRINGVECTOR tv;
 
 		PPSHUAI::TSTRINGVECTORMAP tvmap = {
 			{ _T("进程名称"), tv },
 			{ _T("进程ID"), tv },
+			{ _T("图标文件"), tv },
 		};
 		std::map<DWORD, PROCESSENTRY32> pemap;
 		std::map<DWORD, PROCESSENTRY32>::iterator itEnd;
@@ -97,25 +287,63 @@ int _tmain(int argc, _TCHAR *argv[])
 		itEnd = pemap.end();
 		itIdx = pemap.begin();
 
+		HIMAGELIST hImageList = ImageList_Create(32, 32, ILC_COLOR8 | ILC_MASK, 3, 1);
+
 		for (; itIdx != itEnd; itIdx++)
 		{
+			/*TSTRING tsName = _T("");
+			_TCHAR tF[MAX_PATH] = { 0 };
+			GetProcessFullPath(itIdx->second.th32ProcessID, tF);
+			HANDLE h_Process = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, itIdx->second.th32ProcessID);
+
+			if (h_Process)
+			{
+				_TCHAR tFilePath[MAX_PATH] = { 0 };
+				::GetModuleFileName((HMODULE)h_Process, tFilePath, MAX_PATH + 1);
+				CloseHandle(h_Process);
+			}*/
+			TSTRING tsFileName = _T("");
+			std::map<DWORD, MODULEENTRY32> memap;			
+			PPSHUAI::SystemKernel::EnumModules_R3(&memap, itIdx->second.th32ProcessID);
+			if (memap.size() && lstrlen(memap.begin()->second.szExePath))
+			{
+				tsFileName = memap.begin()->second.szExePath;
+			}
+			else
+			{
+				if (PPSHUAI::FilePath::IsFileExistEx((PPSHUAI::FilePath::GetSystemPath() + itIdx->second.szExeFile).c_str()))
+				{
+					tsFileName = (PPSHUAI::FilePath::GetSystemPath() + itIdx->second.szExeFile);
+				}
+				else
+				{
+					tsFileName = itIdx->second.szExeFile;
+				}
+			}
 			tvmap.at(_T("进程名称")).push_back(itIdx->second.szExeFile);
 			tvmap.at(_T("进程ID")).push_back(PPSHUAI::STRING_FORMAT(_T("%ld"), itIdx->second.th32ProcessID));
+			tvmap.at(_T("图标文件")).push_back(tsFileName);
 		}
 		
-		PPSHUAI::COMMONWINDOW::CAnimationWindow aw(_T("D:\\test-png"), _T(".bmp"));
-		aw.RunApp();
+		//PPSHUAI::GUI::InitParams();
+		//PPSHUAI::GUI::CreateDialogBox();
+		//PPSHUAI::GUI::CreateDialogBoxEx();
+		//PPSHUAI::GUI::CreateDialogBoxTTT();
 
-		PPSHUAI::COMMONWINDOW::CCryptoWindow cw;
-		cw.RunApp();
+		//PPSHUAI::COMMONWINDOW::CAnimationWindow aw(_T("D:\\test-png\\a"), _T(".png"));
+		//aw.RunApp();
 
-		PPSHUAI::COMMONWINDOW::CSelectProcessWindow spw(&tvmap);
+		//PPSHUAI::COMMONWINDOW::CCryptoWindow cw;
+		//cw.RunApp();
+		PPSHUAI::GUI::ImageListInit(hImageList, &tvmap, _T("图标文件"));
+		PPSHUAI::COMMONWINDOW::CSelectProcessWindow spw(&tvmap, &hImageList);
 		spw.RunApp();
-		PPSHUAI::COMMONWINDOW::CFileIconWindow fiw;
-		fiw.RunApp();
 
-		PPSHUAI::COMMONWINDOW::CWindowsManager wm;
-		wm.RunApp();
+		//PPSHUAI::COMMONWINDOW::CFileIconWindow fiw;
+		//fiw.RunApp();
+
+		//PPSHUAI::COMMONWINDOW::CWindowsManager wm;
+		//wm.RunApp();
 		
 		return 0;
 	}
