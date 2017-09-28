@@ -151,7 +151,7 @@ namespace PPSHUAI
 			int nSocketErrorLen = sizeof(nSocketErrorNum);
 
 			//3 seconds timeout
-			struct timeval timeval = { 0, 500000 };
+			struct timeval timeval = { 0, 999000 };
 
 			hostent = gethostbyname(strDomainName.c_str());
 			if (hostent && hostent->h_addr_list)

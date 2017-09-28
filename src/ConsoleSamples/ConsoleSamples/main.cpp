@@ -130,6 +130,7 @@ BOOL GetProcessFullPath(DWORD dwPID, TCHAR pszFullPath[MAX_PATH])
 
 #include <pthread.h>
 bool g_flag = false;
+static int g_nThreadNum = 0;
 typedef struct tagThreadParams
 {
 	CHAR cData[MAXCHAR];
@@ -147,9 +148,7 @@ void * PTW32_CDECL ThreadTest(void * pv)
 		memcpy(&tp, pv, sizeof(tp));
 		
 		free(pv);
-
-		//printf("[线程%lu][%d-%d] start running！\r\n", GetCurrentThreadId(), tp.nStart, tp.nFinal);
-
+		
 		for (nIndex = tp.nStart; nIndex < tp.nFinal; nIndex++)
 		{
 			std::string strPort = PPSHUAI::NETWORK::NameFromPort(nIndex);
@@ -167,12 +166,14 @@ void * PTW32_CDECL ThreadTest(void * pv)
 			}
 			else
 			{
-				printf("[线程%lu] %s is not open.\r\n", GetCurrentThreadId(), strPort.c_str());
+				//printf("[线程%lu] %s is not open.\r\n", GetCurrentThreadId(), strPort.c_str());
 			}
-			Sleep(300);
+			//Sleep(100);
 		}
 	
 		//printf("[线程%lu][%d-%d] leave running！\r\n", GetCurrentThreadId(), tp.nStart, tp.nFinal);
+				
+		g_nThreadNum--; //printf("[--]ThreadNum=%d\r\n", g_nThreadNum);		
 	}
 	
 	return presult;
@@ -189,35 +190,55 @@ int _tmain(int argc, _TCHAR *argv[])
 		int i = 0;
 		std::string strIpAddr = ("47.93.195.43");
 		
+		START_TIMER_TICKS(MAIN);
+
 		SOCKET_STARTUP(2, 2);
 		
 		g_flag = true;
-		INT nAllCount = (MAXWORD + 1);
+		INT nMaxIndex = 10240;//(MAXWORD + 1);
 		INT nUnitSize = MINCHAR;
 		ThreadParams tp = { ("47.93.195.43"), 0, 0 };
 		ThreadParams * ptp = 0;
-		while (tp.nFinal < nAllCount)
+		while (tp.nFinal < nMaxIndex)
 		{
-			pthread_t ptId = { 0 };
-
 			ptp = (ThreadParams *)realloc(0, sizeof(ThreadParams) * sizeof(BYTE));
-			tp.nStart = tp.nFinal;
-			if (nAllCount - tp.nFinal >= nUnitSize)
+			if (ptp)
 			{
-				tp.nFinal = tp.nStart + nUnitSize;
+				pthread_t ptId = { 0 };
+			
+				tp.nStart = tp.nFinal;
+				if (nMaxIndex - tp.nFinal >= nUnitSize)
+				{
+					tp.nFinal = tp.nStart + nUnitSize;
+				}
+				else
+				{
+					tp.nFinal = tp.nStart + (nMaxIndex - tp.nStart) % nUnitSize;
+				}
+				memcpy(ptp, &tp, sizeof(tp));
+				printf("[++][%d-%d] running！\r\n", tp.nStart, tp.nFinal);
+				g_nThreadNum++; //printf("[++]ThreadNum=%d\r\n", g_nThreadNum);
+				pthread_create(&ptId, 0, ThreadTest, ptp);
+				pthread_detach(ptId);
 			}
 			else
 			{
-				tp.nFinal = tp.nStart + (nAllCount - tp.nStart) % nUnitSize;
+				printf("线程内存分配失败！\r\n");
+				break;
 			}
-			memcpy(ptp, &tp, sizeof(tp));
-			pthread_create(&ptId, 0, ThreadTest, ptp);
-			pthread_detach(ptId);
 		}
+
+		while (g_nThreadNum > 0)
+		{
+			Sleep(100);
+		//	printf("ThreadNum=%d\r\n", g_nThreadNum);
+		}
+		printf("线程全部执行结束！\r\n");
 		
-		getch();
+		CLOSE_TIMER_TICKS(MAIN);
+
 		g_flag = true;
-		getch();
+		//getch();
 
 		SOCKET_CLEANUP();
 		

@@ -442,6 +442,7 @@ __inline static std::wstring GetCurrentSystemTimeW()
 #define SplitFilePath			SplitFilePathW
 #endif // !defined(_UNICODE) && !defined(UNICODE)
 
+//返回值单位为100ns
 __inline static LONGLONG GetCurrentTimerTicks()
 {
 	FILETIME ft = { 0 };
@@ -453,6 +454,7 @@ __inline static LONGLONG GetCurrentTimerTicks()
 	u.LowPart = ft.dwLowDateTime;
 	return u.QuadPart;
 }
+
 //获取运行时间间隔差值(输入参数单位为100纳秒)
 __inline static LONGLONG GetIntervalTimerTicks(LONGLONG llTime)
 {
@@ -1224,7 +1226,28 @@ namespace FilePath{
 		}
 		return tsSystemPath;
 	}
+	__inline static
+		BOOL FileIsExists(LPCTSTR pFileName)
+	{
+		WIN32_FILE_ATTRIBUTE_DATA wfad = { 0 };
 
+		return (GetFileAttributesEx(pFileName, GET_FILEEX_INFO_LEVELS::GetFileExInfoStandard, &wfad)
+			? ((wfad.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != FILE_ATTRIBUTE_DIRECTORY) : FALSE);
+	}
+	__inline static
+		BOOL PathIsExists(LPCTSTR pFileName)
+	{
+		WIN32_FILE_ATTRIBUTE_DATA wfad = { 0 };
+		return (GetFileAttributesEx(pFileName, GET_FILEEX_INFO_LEVELS::GetFileExInfoStandard, &wfad)
+			? !((wfad.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == FILE_ATTRIBUTE_DIRECTORY) : FALSE);
+	}
+	__inline static
+		BOOL IsPathExists(LPCTSTR pFileName)
+	{
+		WIN32_FILE_ATTRIBUTE_DATA wfad = { 0 };
+		return (GetFileAttributesEx(pFileName, GET_FILEEX_INFO_LEVELS::GetFileExInfoStandard, &wfad)
+			? !((wfad.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == FILE_ATTRIBUTE_DIRECTORY) : FALSE);
+	}
 	__inline static
 		BOOL IsFileExist(LPCTSTR fileName)
 	{
