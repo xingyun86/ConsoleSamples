@@ -476,6 +476,87 @@ __inline static LONGLONG SubtractTimerTicks(LONGLONG llTimeA, LONGLONG llTimeB)
 #define CLOSE_TIMER_TICKS(x) printf(("%s %s: %s() %llu ms\r\n"), PPSHUAI::GetCurrentSystemTimeA().c_str(), #x, __FUNCTION__, (PPSHUAI::GetCurrentTimerTicks() - ull##x) / MILLI_100NANO);
 #endif
 
+
+__inline static int GetFormatParamCount(const char * p_format)
+{
+	int n_argc = 0;
+	char * p = (char *)p_format;
+
+	while (*p && *(p + 1))
+	{
+		if (*p == '%' && *(p + 1) != '%')
+		{
+			n_argc++;
+			p++;
+		}
+		p++;
+	}
+
+	return n_argc;
+}
+__inline static bool IsLeapYear(int nYear)
+{
+	return (((nYear % 4 == 0) && (nYear % 100 != 0)) || (nYear % 400 == 0));
+}
+
+__inline static bool IsLegalDate(int nYear, int nMonth, int nDay)
+{
+	//´ó£º1 3 5 7 8 10 12
+	//Ð¡£º4 6 9 11
+	//Æ½£º2
+	bool result = false;
+
+	if (nYear > 0 && (nMonth > 0 && nMonth < 13) && (nDay > 0 && nDay < 32))
+	{
+		if ((2 != nMonth && 4 != nMonth && 6 != nMonth && 9 != nMonth && 11 != nMonth) || (nMonth != 2) || (nDay < 29) || (IsLeapYear(nYear) && nDay < 30))
+		{
+			result = true;
+		}
+	}
+	return result;
+}
+
+__inline static bool IsLegalDate(const char * p_date, const char * p_format = ("%04d%02d%02d"))
+{
+	bool result = false;
+	int nYear = 0;
+	int nMonth = 0;
+	int nDay = 0;
+	int nArgNum = GetFormatParamCount(p_format);
+
+	if (sscanf(p_date, p_format, &nYear, &nMonth, &nDay) == nArgNum)
+	{
+		result = IsLegalDate(nYear, nMonth, nDay);
+	}
+
+	return result;
+}
+
+__inline static long long CompareDateTime(const char * p_date_l, const char * p_date_r)
+{
+	return (long long)(atoll(p_date_l) - atoll(p_date_r));
+}
+
+__inline static bool IsMoreThanNowDate(const char * p_date)
+{
+	bool result = false;
+	std::string strNowDate = GetCurrentSystemTimeA();
+	int nYear = 0;
+	int nMonth = 0;
+	int nDay = 0;
+	const char * p_format = "%04d-%02d-%02d";
+	int nArgNum = GetFormatParamCount(p_format);
+
+	if (sscanf(p_date, p_format, &nYear, &nMonth, &nDay) == nArgNum)
+	{
+		if (CompareDateTime(p_date, STRING_FORMAT_A("%04d%02d%02d", nYear, nMonth, nDay).c_str()) > 0)
+		{
+			result = true;
+		}
+	}
+	return result;
+}
+
 namespace Convert{
 	//	ANSI to Unicode
 	__inline static std::wstring ANSIToUnicode(const std::string str)
