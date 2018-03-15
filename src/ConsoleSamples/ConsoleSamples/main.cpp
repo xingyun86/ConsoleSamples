@@ -187,6 +187,40 @@ int _tmain(int argc, _TCHAR *argv[])
 {
 	PPSHUAI::SystemKernel::PromotingPrivilege(SE_DEBUG_NAME, TRUE);
 	{
+		std::string strData = "123";
+		BYTE * pEnData = NULL;
+		DWORD dwEnSize = 0;
+		BYTE * pDeData = NULL;
+		DWORD dwDeSize = 0;
+
+		PPSHUAI::CRYPTO::CCryptClass cc;
+		DWORD dwResult = (-1L);
+
+		if (!(dwResult = cc.crypt_init_key(0, 0)))
+		{
+			if (!(dwResult = cc.crypt_encode_data((BYTE *)strData.c_str(), strData.length())))
+			{
+				BYTE * pDeData = 0;
+				dwDeSize = cc.size();
+				pDeData = (BYTE *)realloc(pDeData, dwDeSize);
+				memcpy(pDeData, cc.data(), dwDeSize);
+				if (!(dwResult = cc.crypt_decode_data((BYTE *)pDeData, dwDeSize)))
+				{
+					BYTE * pEnData = 0;
+					dwEnSize = cc.size();
+					pEnData = (BYTE *)realloc(pEnData, dwEnSize);
+					memcpy(pEnData, cc.data(), dwEnSize);
+					dwResult = cc.crypt_exit_key();
+				}
+			}
+		}
+		
+		PPSHUAI::CRYPTO::CCryptClass::encrypt(&pEnData, &dwEnSize, (BYTE *)strData.c_str(), strData.length());
+		PPSHUAI::CRYPTO::CCryptClass::decrypt(&pDeData, &dwDeSize, pEnData, dwEnSize);
+
+		return 0;
+	}
+	{
 		int i = 0;
 		std::string strIpAddr = ("47.93.195.43");
 		

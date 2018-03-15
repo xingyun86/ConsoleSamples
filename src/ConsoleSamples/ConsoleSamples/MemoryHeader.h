@@ -538,5 +538,205 @@ namespace PPSHUAI{
 		{
 			PPSHUAI::FilePath::MapRelease(phFileMapping, pbData);
 		}
+
+		////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+		//注入DLL到远程进程(使用CreateRemoteThread)
+		__inline BOOL InjectDllToRemoteProcess(const _TCHAR* lpDllName, const _TCHAR* lpPid, const _TCHAR* lpProcName)
+		{
+			PROCESS_INFORMATION pi = { 0 };
+
+			if ((ElevatePrivileges() == FALSE) || (UNDOCAPI::InitUnDocumentApis() == FALSE))
+			{
+				return FALSE;
+			}
+
+			if (_tcsstr(lpProcName, _T("\\")) || _tcsstr(lpProcName, _T("/")))
+			{
+				StartupProgram(lpProcName, _T(""), NULL, &pi);
+			}
+
+			if (pi.dwProcessId <= 0)
+			{
+				if (NULL == lpPid || 0 == _tcslen(lpPid))
+				{
+					if (NULL != lpProcName && 0 != _tcslen(lpProcName))
+					{
+						if (pi.dwProcessId = GetProcessIdByProcessName(lpProcName))
+						{
+							return FALSE;
+						}
+					}
+					else
+					{
+						return FALSE;
+					}
+				}
+				else
+				{
+					pi.dwProcessId = _ttoi(lpPid);
+				}
+			}
+
+			//根据Pid得到进程句柄(注意必须权限)
+			HANDLE hRemoteProcess = NULL;
+			hRemoteProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pi.dwProcessId);
+			//hRemoteProcess = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_SUSPEND_RESUME, FALSE, stPid);
+			if (!hRemoteProcess && INVALID_HANDLE_VALUE == hRemoteProcess)
+			{
+				return FALSE;
+			}
+
+			//挂起进程
+			FUNC_PROC(ZwSuspendProcess)(hRemoteProcess);
+
+			//计算DLL路径名需要的内存空间
+			SIZE_T stSize = (1 + _tcslen(lpDllName)) * sizeof(_TCHAR);
+
+			//使用VirtualAllocEx函数在远程进程的内存地址空间分配DLL文件名缓冲区,成功返回分配内存的首地址.
+			LPVOID lpRemoteBuff = VirtualAllocEx(hRemoteProcess, NULL, stSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+			if (NULL == lpRemoteBuff)
+			{
+				CloseHandle(hRemoteProcess);
+				return FALSE;
+			}
+
+			//使用WriteProcessMemory函数将DLL的路径名复制到远程进程的内存空间,成功返回TRUE.
+			SIZE_T stHasWrite = 0;
+			BOOL bRet = WriteProcessMemory(hRemoteProcess, lpRemoteBuff, lpDllName, stSize, &stHasWrite);
+			if (!bRet || stHasWrite != stSize)
+			{
+				VirtualFreeEx(hRemoteProcess, lpRemoteBuff, stSize, MEM_DECOMMIT | MEM_RELEASE);
+				CloseHandle(hRemoteProcess);
+				return FALSE;
+			}
+
+			//创建一个在其它进程地址空间中运行的线程(也称:创建远程线程),成功返回新线程句柄.
+			//注意:进程句柄必须具备PROCESS_CREATE_THREAD, PROCESS_QUERY_INFORMATION, PROCESS_VM_OPERATION, PROCESS_VM_WRITE,和PROCESS_VM_READ访问权限
+			DWORD dwRemoteThread = 0;
+			LPTHREAD_START_ROUTINE pfnLoadLibrary = (LPTHREAD_START_ROUTINE)GetProcAddress(GetModuleHandle(_T("Kernel32")), "LoadLibraryA");
+			HANDLE hRemoteThread = CreateRemoteThread(hRemoteProcess, NULL, 0, (LPTHREAD_START_ROUTINE)pfnLoadLibrary, lpRemoteBuff, 0, &dwRemoteThread);
+			if (INVALID_HANDLE_VALUE == hRemoteThread)
+			{
+				VirtualFreeEx(hRemoteProcess, lpRemoteBuff, stSize, MEM_DECOMMIT | MEM_RELEASE);
+				CloseHandle(hRemoteProcess);
+				return FALSE;
+			}
+
+			//注入成功释放句柄
+			WaitForSingleObject(hRemoteThread, INFINITE);
+
+			FUNC_PROC(ZwResumeProcess)(hRemoteProcess);
+
+			CloseHandle(hRemoteThread);
+			CloseHandle(hRemoteProcess);
+
+			return TRUE;
+		}
+
+		//使用纯汇编实现远程进程注入
+		__inline BOOL InjectDll(DWORD dwProcessId, DWORD dwThreadId, const _TCHAR * ptzDllName)
+		{
+			BOOL bResult = FALSE;
+			FARPROC farproc = NULL;
+			CONTEXT context = { 0 };
+			LPVOID lpCodeBase = NULL;
+			SIZE_T stCodeSize = USN_PAGE_SIZE;
+			SIZE_T stNumberOfBytesWritten = 0;
+			DWORD dwCurrentEipAddress = 0;
+			DWORD dwIndexOffsetPosition = 0;
+			CHAR szCodeData[USN_PAGE_SIZE] = { 0 };
+			CHAR szCode0[] = ("\x60\xE8\x00\x00\x00\x00\x58\x83\xC0\x13\x50\xB8");
+			CHAR szCode1[] = ("\xFF\xD0\x61\x68");
+			CHAR szCode2[] = ("\xC3");
+
+			//根据Pid得到进程句柄(注意必须权限)
+			HANDLE hRemoteProcess = NULL;
+			HANDLE hRemoteThread = NULL;
+			ULONG ulPreviousSuspendCount = 0;
+			if ((ElevatePrivileges() == FALSE) || (UNDOCAPI::InitUnDocumentApis() == FALSE))
+			{
+				return FALSE;
+			}
+
+			hRemoteProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, dwProcessId);
+			//hRemoteProcess = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_SUSPEND_RESUME, FALSE, stPid);
+			if (!hRemoteProcess && INVALID_HANDLE_VALUE == hRemoteProcess)
+			{
+				return FALSE;
+			}
+
+			hRemoteThread = OpenThread(THREAD_ALL_ACCESS, FALSE, dwThreadId);
+			//hRemoteProcess = OpenThread(THREAD_TERMINATE | THREAD_GET_CONTEXT | THREAD_SET_CONTEXT | THREAD_SET_INFORMATION |THREAD_SET_THREAD_TOKEN | THREAD_IMPERSONATE | THREAD_DIRECT_IMPERSONATION | THREAD_QUERY_INFORMATION | THREAD_SUSPEND_RESUME, FALSE, stPid);
+			if (!hRemoteThread && INVALID_HANDLE_VALUE == hRemoteThread)
+			{
+				return FALSE;
+			}
+
+			//挂起进程
+			FUNC_PROC(ZwSuspendProcess)(hRemoteProcess);
+
+			//挂起线程
+			FUNC_PROC(ZwSuspendThread)(hRemoteThread, &ulPreviousSuspendCount);
+
+			//在远程进程分配可执行读写模块
+			lpCodeBase = VirtualAllocEx(hRemoteProcess, lpCodeBase, stCodeSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+
+			//设置线程上下文的标识
+			context.ContextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_SEGMENTS;
+
+			//获取线程上下文
+			FUNC_PROC(ZwGetContextThread)(hRemoteThread, &context);
+
+			//获取远程进程的当前执行地址
+			dwCurrentEipAddress = context.Eip;
+
+			//设置远程进程的下一执行地址
+			context.Eip = (DWORD)lpCodeBase;
+
+			//获取LoadLibraryA的函数地址
+			farproc = GetProcAddress(GetModuleHandle(_T("KERNEL32.DLL")), ("LoadLibraryA"));
+
+			///////////////////////////////////////////////////////////////////////////////////
+			// 数据块
+			// CodeData ＝ 
+			//		{ 96, 232, 0, 0, 0, 0, 88, 131, 192, 19, 80, 184 } / "\x60\xE8\x00\x00\x00\x00\x58\x83\xC0\x13\x50\xB8" 
+			//		{ LoadLibraryA函数地址 }
+			//		{ 255, 208, 97, 104 } / "\xFF\xD0\x61\x68"
+			//		{ Eip地址 }
+			//		{ 195 } / "\xC3"
+			//		{ Dll路径 };
+
+			memcpy(szCodeData + dwIndexOffsetPosition, szCode0, sizeof(szCode0) - 1);
+			dwIndexOffsetPosition += sizeof(szCode0) - 1;
+			memcpy(szCodeData + dwIndexOffsetPosition, &farproc, sizeof(farproc));
+			dwIndexOffsetPosition += sizeof(farproc);
+			memcpy(szCodeData + dwIndexOffsetPosition, szCode1, sizeof(szCode1) - 1);
+			dwIndexOffsetPosition += sizeof(szCode1) - 1;
+			memcpy(szCodeData + dwIndexOffsetPosition, &dwCurrentEipAddress, sizeof(dwCurrentEipAddress));
+			dwIndexOffsetPosition += sizeof(dwCurrentEipAddress);
+			memcpy(szCodeData + dwIndexOffsetPosition, szCode2, sizeof(szCode2) - 1);
+			dwIndexOffsetPosition += sizeof(szCode2) - 1;
+			memcpy(szCodeData + dwIndexOffsetPosition, Convert::TToA(ptzDllName).c_str(), Convert::TToA(ptzDllName).length());
+			dwIndexOffsetPosition += Convert::TToA(ptzDllName).length();
+
+			//写入远程进程可执行读写模块
+			WriteProcessMemory(hRemoteProcess, lpCodeBase, szCodeData, dwIndexOffsetPosition, &stNumberOfBytesWritten);
+
+			//设置线程上下文
+			FUNC_PROC(ZwSetContextThread)(hRemoteThread, &context);
+
+			//恢复线程
+			FUNC_PROC(ZwResumeThread)(hRemoteThread, &ulPreviousSuspendCount);
+
+			//恢复进程
+			FUNC_PROC(ZwResumeProcess)(hRemoteProcess);
+
+			//释放在远程进程分配的可执行读写模块
+			//VirtualFreeEx(hRemoteProcess, lpCodeBase, stCodeSize, MEM_DECOMMIT | MEM_RELEASE);
+
+			return bResult;
+		}
 	}
 }

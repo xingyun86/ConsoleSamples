@@ -5,6 +5,9 @@
 
 #include <tlhelp32.h>
 
+#include <io.h>
+#include <fcntl.h>
+
 #include <tchar.h>
 #include <sys/stat.h>
 
@@ -231,6 +234,44 @@ __inline static std::wstring ToLowerCaseW(LPCWSTR pW)
 {
 	return _wcsupr((LPWSTR)pW);
 }
+__inline static std::string str_xor(std::string s)
+{
+	std::string x(s);
+	size_t stIdx = 0;
+	size_t stNum = x.length();
+	for (stIdx = 0; stIdx < stNum; stIdx++)
+	{
+		x.at(stIdx) = (BYTE)(0xFF - x.at(stIdx));
+	}
+	return x;
+}
+
+__inline static std::string hex_to_str(std::string h)
+{
+	std::string s((""));
+	size_t i = 0;
+	size_t l = h.length();
+	for (i = 0; i < l; i++)
+	{
+		s.append(STRING_FORMAT_A("%02X", (BYTE)h.at(i)));
+	}
+	return s;
+}
+
+__inline static std::string str_to_hex(std::string s)
+{
+	std::string h((""));
+	size_t i = 0;
+	size_t l = s.length();
+	if (!(l % sizeof(WORD)))
+	{
+		for (i = 0; i < l; i += sizeof(WORD))
+		{
+			h.push_back((BYTE)strtoul(s.substr(i, sizeof(WORD)).c_str(), NULL, 0x10));
+		}
+	}
+	return h;
+}
 
 __inline static std::string GetFilePathDriveA(LPCSTR lpFileName)
 {
@@ -358,39 +399,69 @@ __inline static void MemoryRelease(void ** p)
 	free((*p));	(*p) = 0;
 }
 
-//初始化调试窗口显示
-__inline static void InitDebugConsole()
-{
-	FILE *pStdOut = stdout;
-	FILE *pStdIn = stdin;
-	FILE *pStdErr = stderr;
+#if !defined(_UNICODE) && !defined(UNICODE)
+#define ToUpperCase				ToUpperCaseA
+#define ToLowerCase				ToLowerCaseA
+#define STRING_FORMAT			STRING_FORMAT_A
+#define GetCurrentSystemTime	GetCurrentSystemTimeA
+#define ParseError				ParseErrorA
+#define GetFilePathDrive		GetFilePathDriveA
+#define GetFilePathDir			GetFilePathDirA
+#define GetFilePathExt			GetFilePathExtA
+#define GetFilePathFname		GetFilePathFnameA
+#define SplitFilePath			SplitFilePathA
 
+#else
+#define ToUpperCase				ToUpperCaseW
+#define ToLowerCase				ToLowerCaseW
+#define STRING_FORMAT			STRING_FORMAT_W
+#define GetCurrentSystemTime	GetCurrentSystemTimeW
+#define ParseError				ParseErrorW
+#define GetFilePathDrive		GetFilePathDriveW
+#define GetFilePathDir			GetFilePathDirW
+#define GetFilePathExt			GetFilePathExtW
+#define GetFilePathFname		GetFilePathFnameW
+#define SplitFilePath			SplitFilePathW
+#endif // !defined(_UNICODE) && !defined(UNICODE)
+
+
+//初始化调试窗口显示
+__inline static void InitDebugConsole(const _TCHAR * ptszConsoleTitle = _T("TraceDebugWindow"))
+{
 	if (!AllocConsole())
 	{
-		_TCHAR tErrorInfos[16384] = { 0 };
-		_sntprintf(tErrorInfos, sizeof(tErrorInfos) / sizeof(_TCHAR), _T("控制台生成失败! 错误代码:0x%X。"), GetLastError());
-		MessageBox(NULL, tErrorInfos, _T("错误提示"), 0);
-		return;
+		MessageBox(NULL, STRING_FORMAT(_T("控制台生成失败! 错误代码:0x%X。"), GetLastError()).c_str(), _T("错误提示"), 0);
 	}
-	SetConsoleTitle(_T("TraceDebugWindow"));
-
-	pStdOut = _tfreopen(_T("CONOUT$"), _T("w"), stdout);
-	pStdIn = _tfreopen(_T("CONIN$"), _T("r"), stdin);
-	pStdErr = _tfreopen(_T("CONERR$"), _T("w"), stderr);
-	_tsetlocale(LC_ALL, _T("chs"));
+	else
+	{
+		SetConsoleTitle(ptszConsoleTitle);
+		_tfreopen(_T("CONIN$"), _T("rb"), stdin);
+		_tfreopen(_T("CONOUT$"), _T("wb"), stdout);
+		_tfreopen(_T("CONOUT$"), _T("wb"), stderr);
+		//_tfreopen(_T("CONERR$"), _T("wb"), stderr);
+		_tsetlocale(LC_ALL, _T("chs"));
+	}
 }
 
 //释放掉调试窗口显示
 __inline static void ExitDebugConsole()
 {
+	fclose(stderr);
+	fclose(stdout);
+	fclose(stdin);
 	FreeConsole();
 }
+
+//根据秒时间获取日期
+static __inline tstring DATE_FROM_TIME(time_t tv_sec) { _TCHAR tzV[_MAX_PATH] = { 0 }; struct tm * tm = localtime(&tv_sec); memset(tzV, 0, sizeof(tzV)); _tcsftime(tzV, sizeof(tzV) / sizeof(_TCHAR), _T("%Y%m%d"), tm); return tstring(tzV); }
+//根据秒时间获取精确微秒时间
+static __inline tstring STRING_FROM_TIME(struct timeval * ptv) { time_t tt = ptv->tv_sec; struct tm * tm = localtime((const time_t *)&tt); _TCHAR tzV[_MAX_PATH] = { 0 }; memset(tzV, 0, sizeof(tzV)); _tcsftime(tzV, sizeof(tzV) / sizeof(_TCHAR), _T("%Y-%m-%d %H:%M:%S"), tm); return tstring(tzV) + _T(".") + STRING_FORMAT(_T("%ld"), ptv->tv_usec); }
 
 //获取毫秒时间计数器(返回结果为100纳秒的时间, 1ns=1 000 000ms=1000 000 000s)
 #define MILLI_100NANO (ULONGLONG)(1000000ULL / 100ULL)
 __inline static std::string GetCurrentSystemTimeA()
 {
-	CHAR szTime[MAXCHAR] = {0};
+	CHAR szTime[MAXCHAR] = { 0 };
 	SYSTEMTIME st = { 0 };
 	//FILETIME ft = { 0 };
 	//::GetSystemTimeAsFileTime(&ft);
@@ -417,30 +488,21 @@ __inline static std::wstring GetCurrentSystemTimeW()
 	return std::wstring(wzTime);
 }
 
-#if !defined(_UNICODE) && !defined(UNICODE)
-#define ToUpperCase				ToUpperCaseA
-#define ToLowerCase				ToLowerCaseA
-#define STRING_FORMAT			STRING_FORMAT_A
-#define GetCurrentSystemTime	GetCurrentSystemTimeA
-#define ParseError				ParseErrorA
-#define GetFilePathDrive		GetFilePathDriveA
-#define GetFilePathDir			GetFilePathDirA
-#define GetFilePathExt			GetFilePathExtA
-#define GetFilePathFname		GetFilePathFnameA
-#define SplitFilePath			SplitFilePathA
+#ifndef gettimeofday
+__inline static struct timeval* gettimeofday(struct timeval* ptv)
+{
+	typedef union {
+		FILETIME filetime;
+		unsigned long long nanotime;
+	} NANOTIME;
+	NANOTIME nt = { 0 };
+	::GetSystemTimeAsFileTime(&nt.filetime);
+	ptv->tv_usec = (long)((nt.nanotime / 10ULL) % 1000000ULL);
+	ptv->tv_sec = (long)((nt.nanotime - 116444736000000000ULL) / 10000000ULL);
 
-#else
-#define ToUpperCase				ToUpperCaseW
-#define ToLowerCase				ToLowerCaseW
-#define STRING_FORMAT			STRING_FORMAT_W
-#define GetCurrentSystemTime	GetCurrentSystemTimeW
-#define ParseError				ParseErrorW
-#define GetFilePathDrive		GetFilePathDriveW
-#define GetFilePathDir			GetFilePathDirW
-#define GetFilePathExt			GetFilePathExtW
-#define GetFilePathFname		GetFilePathFnameW
-#define SplitFilePath			SplitFilePathW
-#endif // !defined(_UNICODE) && !defined(UNICODE)
+	return ptv;
+}
+#endif // !gettimeofday
 
 //返回值单位为100ns
 __inline static LONGLONG GetCurrentTimerTicks()
@@ -1525,6 +1587,66 @@ namespace FilePath{
 		}
 
 		return hFileMapping;
+	}
+
+
+#define LOGG_FILE_NAME	"file.log"
+
+	//记录日志接口
+	__inline static void DebugPrint(int fd, const void * data, unsigned long size)
+	{
+		write(fd, data, size);
+		//fsync(fd);
+	}
+
+	//记录日志接口
+	__inline static void DebugPrint(int fd, const _TCHAR * data, struct timeval * tv)
+	{
+		std::string strLog = Convert::TToA(tstring(_T("[")) + STRING_FROM_TIME(tv) + _T("] ") + data + _T("\n"));
+		DebugPrint(fd, strLog.c_str(), strLog.length());
+		DebugPrint(fileno(stdout), strLog.c_str(), strLog.length());
+	}
+
+	//记录日志接口
+	__inline static void DebugPrint(const _TCHAR * pLogInfo, const _TCHAR * pLogFile = _T(LOGG_FILE_NAME))
+	{
+		int fd = 0;
+		struct  timeval  tv = { 0 };
+		struct _stat64i32 st = { 0 };
+
+		_tstat(pLogFile, &st);
+		if ((st.st_mode & S_IFREG) != S_IFREG)
+		{
+			//fd = _topen(logfilename, O_CREAT | O_TRUNC | O_RDWR);
+			fd = _topen(pLogFile, O_CREAT | O_TRUNC | O_RDWR, 0777);
+		}
+		else
+		{
+			//fd = _topen(logfilename, O_CREAT | O_APPEND | O_RDWR);
+			fd = _topen(pLogFile, O_APPEND | O_RDWR, 0777);
+
+			//gettimeofday(&tv);
+			////不是今天
+			//if (DATE_FROM_TIME(st.st_mtime).compare(DATE_FROM_TIME(tv.tv_sec)))
+			//{
+			//	//fd = _topen(logfilename, O_CREAT | O_TRUNC | O_RDWR);
+			//	fd = _topen(pLogFile, O_CREAT | O_TRUNC | O_RDWR, 0777);
+			//}	
+		}
+		if (fd > 0)
+		{
+			DebugPrint(fd, pLogInfo, &tv);
+		}
+	}
+	//记录日志接口
+	__inline static void DebugPrintC(const _TCHAR * pLogInfo, const _TCHAR * pLogFile = _T(LOGG_FILE_NAME))
+	{
+		DebugPrint(pLogFile, pLogInfo);
+	}
+	//记录日志接口
+	__inline static void DebugPrintString(tstring tsLogInfo, tstring tsLogFile = _T(LOGG_FILE_NAME))
+	{
+		DebugPrintC(tsLogInfo.c_str(), tsLogFile.c_str());
 	}
 
 #define CMD_PATH_NAME				"CMD.EXE" //相对路径名称
@@ -2625,6 +2747,83 @@ namespace SystemKernel{
 	}LAUNCHTYPE;
 
 	//传入应用程序文件名称、参数、启动类型及等待时间启动程序
+	__inline BOOL StartupProgram(tstring tsAppProgName, tstring tsArguments = _T(""), STARTUPINFO * pStartupInfo = NULL, PROCESS_INFORMATION * pProcessInformation = NULL, DWORD dwFlags = CREATE_NEW_CONSOLE, LPVOID lpEnvironment = NULL, LPCTSTR lpCurrentDirectory = NULL, LAUNCHTYPE type = LTYPE_0, DWORD dwWaitTime = WAIT_TIMEOUT)
+	{
+		BOOL bRet = FALSE;
+		STARTUPINFO si = { 0 };
+		PROCESS_INFORMATION pi = { 0 };
+		DWORD dwCreateFlags = dwFlags;
+		LPTSTR lpArguments = NULL;
+		STARTUPINFO * pSI = &si;
+		PROCESS_INFORMATION * pPI = &pi;
+
+		if (pStartupInfo)
+		{
+			pSI = pStartupInfo;
+		}
+		if (pProcessInformation)
+		{
+			pPI = pProcessInformation;
+		}
+
+		if (tsArguments.length())
+		{
+			lpArguments = (LPTSTR)tsArguments.c_str();
+		}
+
+		pSI->cb = sizeof(STARTUPINFO);
+
+		// Start the child process.
+		bRet = CreateProcess(tsAppProgName.c_str(),   // No module name (use command line)
+			lpArguments,        // Command line
+			NULL,           // Process handle not inheritable
+			NULL,           // Thread handle not inheritable
+			FALSE,          // Set handle inheritance to FALSE
+			dwCreateFlags,              // No creation flags
+			NULL,           // Use parent's environment block
+			NULL,           // Use parent's starting directory
+			pSI,            // Pointer to STARTUPINFO structure
+			pPI);           // Pointer to PROCESS_INFORMATION structure
+		if (bRet)
+		{
+			switch (type)
+			{
+			case LTYPE_0:
+			{
+				// No wait until child process exits.
+			}
+			break;
+			case LTYPE_1:
+			{
+				// Wait until child process exits.
+				WaitForSingleObject(pPI->hProcess, INFINITE);
+			}
+			break;
+			case LTYPE_2:
+			{
+				// Wait until child process exits.
+				WaitForSingleObject(pPI->hProcess, dwWaitTime);
+			}
+			break;
+			default:
+				break;
+			}
+
+			// Close process and thread handles.
+			//CloseHandle(pPI->hProcess);
+			//CloseHandle(pPI->hThread);
+
+			// Exit process.
+			//TerminateProcessByProcessId(pPI->dwProcessId);
+		}
+		else
+		{
+			//DEBUG_TRACE(_T("CreateProcess failed (%d).\n"), GetLastError());
+		}
+		return bRet;
+	}
+
+	//传入应用程序文件名称、参数、启动类型及等待时间启动程序
 	__inline static BOOL LaunchAppProg(tstring tsAppProgName, tstring tsArguments = _T(""), bool bNoUI = true, LAUNCHTYPE type = LTYPE_0, DWORD dwWaitTime = WAIT_TIMEOUT)
 	{
 		BOOL bRet = FALSE;
@@ -2729,18 +2928,38 @@ namespace SystemKernel{
 		return bResult;
 	}
 	//系统提权函数
+	__inline static BOOL ElevatePrivileges(BOOL bEnable = TRUE)
+	{
+		BOOL bRet = FALSE;
+		HANDLE hToken = NULL;
+		TOKEN_PRIVILEGES tkp = { 0x1, { 0 } };
+
+		if (OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken))
+		{
+			if (LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &tkp.Privileges[0].Luid))
+			{
+				tkp.Privileges[0].Attributes = (bEnable) ? SE_PRIVILEGE_ENABLED : 0;
+				if (AdjustTokenPrivileges(hToken, FALSE, &tkp, sizeof(TOKEN_PRIVILEGES), NULL, NULL))
+				{
+					bRet = TRUE;
+				}
+			}
+		}
+
+		return bRet;
+	}
+	//系统提权函数
 	__inline static BOOL PromotingPrivilege(LPCTSTR lpszPrivilegeName, BOOL bEnable)
 	{
 		BOOL bRet = FALSE;
 		LUID luid = { 0 };
 		HANDLE hToken = NULL;
-		TOKEN_PRIVILEGES tp = { 0 };
+		TOKEN_PRIVILEGES tp = { 0x01L, { 0 } };
 
 		if (OpenProcessToken(GetCurrentProcess(),
 			TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY | TOKEN_READ, &hToken) &&
 			LookupPrivilegeValue(NULL, lpszPrivilegeName, &luid))
 		{
-			tp.PrivilegeCount = 0x01L;
 			tp.Privileges[0].Luid = luid;
 			tp.Privileges[0].Attributes = (bEnable) ? SE_PRIVILEGE_ENABLED : 0;
 			bRet = AdjustTokenPrivileges(hToken, FALSE, &tp, NULL, NULL, NULL);

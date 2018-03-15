@@ -395,6 +395,10 @@ namespace PPSHUAI{
 		
 #define FUNC_TYPE(NAME)			(P_##NAME)
 
+		typedef DWORD(WINAPI *FUNC_TYPE(ZwGetContextThread))(HANDLE, PCONTEXT);
+		typedef DWORD(WINAPI *FUNC_TYPE(ZwSetContextThread))(HANDLE, PCONTEXT);
+		typedef DWORD(WINAPI *FUNC_TYPE(ZwSuspendThread))(HANDLE, PULONG);
+		typedef DWORD(WINAPI *FUNC_TYPE(ZwResumeThread))(HANDLE, PULONG);
 		typedef DWORD(WINAPI *FUNC_TYPE(ZwSuspendProcess))(HANDLE);
 		typedef DWORD(WINAPI *FUNC_TYPE(ZwResumeProcess))(HANDLE);
 		typedef NTSTATUS(WINAPI *FUNC_TYPE(ZwQueryInformationProcess))(HANDLE, PROCESSINFOCLASSEX, LPVOID, DWORD, PDWORD);
@@ -438,6 +442,10 @@ namespace PPSHUAI{
 			MAPKV_INIT_FUN(ZwQuerySystemInformation),
 			MAPKV_INIT_FUN(ZwQueryObject),
 			MAPKV_INIT_FUN(RtlAdjustPrivilege),
+			MAPKV_INIT_FUN(ZwGetContextThread),
+			MAPKV_INIT_FUN(ZwSetContextThread),
+			MAPKV_INIT_FUN(ZwSuspendThread),
+			MAPKV_INIT_FUN(ZwResumeThread),
 			MAPKV_INIT_FUN(ZwSuspendProcess),
 			MAPKV_INIT_FUN(ZwResumeProcess),
 			FUN_MAP_END()
