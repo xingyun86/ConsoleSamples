@@ -97,6 +97,174 @@ __inline static std::wstring STRING_FORMAT_W(const WCHAR * pwFormat, ...)
 	return W.c_str();
 }
 
+//获取毫秒时间计数器(返回结果为100纳秒的时间, 1ns=1 000 000ms=1000 000 000s)
+#define MILLI_100NANO (ULONGLONG)(1000000ULL / 100ULL)
+__inline static std::string GetCurrentSystemTimeA()
+{
+	CHAR szTime[MAXCHAR] = { 0 };
+	SYSTEMTIME st = { 0 };
+	//FILETIME ft = { 0 };
+	//::GetSystemTimeAsFileTime(&ft);
+	::GetLocalTime(&st);
+	//::GetSystemTime(&st);
+	//::SystemTimeToFileTime(&st, &ft);
+	//::SystemTimeToTzSpecificLocalTime(NULL, &st, &st);
+	wsprintfA(szTime, ("%04d-%02d-%02d %02d:%02d:%02d.%03d"),
+		st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+	return std::string(szTime);
+}
+__inline static std::wstring GetCurrentSystemTimeW()
+{
+	WCHAR wzTime[MAXCHAR] = { 0 };
+	SYSTEMTIME st = { 0 };
+	//FILETIME ft = { 0 };
+	//::GetSystemTimeAsFileTime(&ft);
+	::GetLocalTime(&st);
+	//::GetSystemTime(&st);
+	//::SystemTimeToFileTime(&st, &ft);
+	//::SystemTimeToTzSpecificLocalTime(NULL, &st, &st);
+	wsprintfW(wzTime, (L"%04d-%02d-%02d %02d:%02d:%02d.%03d"),
+		st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+	return std::wstring(wzTime);
+}
+
+#ifndef gettimeofday
+__inline static struct timeval* gettimeofday(struct timeval* ptv)
+{
+	typedef union {
+		FILETIME filetime;
+		unsigned long long nanotime;
+	} NANOTIME;
+	NANOTIME nt = { 0 };
+	::GetSystemTimeAsFileTime(&nt.filetime);
+	ptv->tv_usec = (long)((nt.nanotime / 10ULL) % 1000000ULL);
+	ptv->tv_sec = (long)((nt.nanotime - 116444736000000000ULL) / 10000000ULL);
+
+	return ptv;
+}
+#endif // !gettimeofday
+
+//返回值单位为100ns
+__inline static LONGLONG GetCurrentTimerTicks()
+{
+	FILETIME ft = { 0 };
+	SYSTEMTIME st = { 0 };
+	ULARGE_INTEGER u = { 0, 0 };
+	::GetSystemTime(&st);
+	::SystemTimeToFileTime(&st, &ft);
+	u.HighPart = ft.dwHighDateTime;
+	u.LowPart = ft.dwLowDateTime;
+	return u.QuadPart;
+}
+
+//获取运行时间间隔差值(输入参数单位为100纳秒)
+__inline static LONGLONG GetIntervalTimerTicks(LONGLONG llTime)
+{
+	return (LONGLONG)((GetCurrentTimerTicks() - llTime) / MILLI_100NANO);
+}
+//时间间隔差值(输入参数单位为100纳秒)
+__inline static LONGLONG SubtractTimerTicks(LONGLONG llTimeA, LONGLONG llTimeB)
+{
+	return (LONGLONG)((llTimeA - llTimeB) / MILLI_100NANO);
+}
+
+#if !defined(_DEBUG) && !defined(DEBUG)
+#define START_TIMER_TICKS(x)
+#define RESET_TIMER_TICKS(x)
+#define CLOSE_TIMER_TICKS(x)
+#else
+#define START_TIMER_TICKS(x) ULONGLONG ull##x = PPSHUAI::GetCurrentTimerTicks();
+#define RESET_TIMER_TICKS(x) ull##x = PPSHUAI::GetCurrentTimerTicks();
+#define CLOSE_TIMER_TICKS(x) printf(("%s %s: %s() %llu ms\r\n"), PPSHUAI::GetCurrentSystemTimeA().c_str(), #x, __FUNCTION__, (PPSHUAI::GetCurrentTimerTicks() - ull##x) / MILLI_100NANO);
+#endif
+
+__inline static int GetFormatParamCount(const char * p_format)
+{
+	int n_argc = 0;
+	char * p = (char *)p_format;
+
+	while (*p && *(p + 1))
+	{
+		if (*p == '%')
+		{
+			if (*(p + 1) != '%')
+			{
+				n_argc++;
+			}
+			p++;
+		}
+		p++;
+	}
+
+	return n_argc;
+}
+__inline static bool IsLeapYear(long lYear)
+{
+	return (((lYear % 4 == 0) && (lYear % 100 != 0)) || (lYear % 400 == 0));
+}
+
+__inline static bool IsLegalDate(long lYear, long lMonth, long lDay)
+{
+	//大：1 3 5 7 8 10 12
+	//小：4 6 9 11
+	//平：2
+	bool result = false;
+
+	if (lYear > 0 && (lMonth > 0 && lMonth < 13) && (lDay > 0 && lDay < 32))
+	{
+		if ((2 != lMonth && 4 != lMonth && 6 != lMonth && 9 != lMonth && 11 != lMonth) || (lMonth != 2) || (lDay < 29) || (IsLeapYear(lYear) && lDay < 30))
+		{
+			result = true;
+		}
+	}
+	return result;
+}
+
+__inline static bool IsLegalDate(const char * p_date, const char * p_format = ("%04d%02d%02d"))
+{
+	bool result = false;
+	long lYear = 0;
+	long lMonth = 0;
+	long lDay = 0;
+	int nArgNum = GetFormatParamCount(p_format);
+
+	if (sscanf(p_date, p_format, &lYear, &lMonth, &lDay) == nArgNum)
+	{
+		result = IsLegalDate(lYear, lMonth, lDay);
+	}
+
+	return result;
+}
+
+//输入日期类型格式必须为"20010808"
+__inline static long long CompareDateTime(const char * p_date_l, const char * p_date_r)
+{
+	return (long long)(atoll(p_date_l) - atoll(p_date_r));
+}
+
+//输入日期类型格式必须为"20010808"
+__inline static bool IsMoreThanNowDate(const char * p_date)
+{
+	bool result = false;
+	long lYear = 0, lMonth = 0, lDay = 0;
+	int nArgNum = GetFormatParamCount(("%04d-%02d-%02d"));
+
+	if (sscanf(GetCurrentSystemTimeA().c_str(), ("%04d-%02d-%02d"), &lYear, &lMonth, &lDay) == nArgNum)
+	{
+		if (CompareDateTime(p_date, STRING_FORMAT_A("%04d%02d%02d", lYear, lMonth,lDay).c_str()) != 0)
+		{
+			result = true;
+		}
+	}
+	return result;
+}
+//根据秒时间获取日期
+__inline static std::string STRING_FORMAT_DATE_A(time_t tv_sec, const CHAR * pszFormat = ("%Y%m%d")) { CHAR tzV[_MAX_PATH] = { 0 }; struct tm * tm = localtime(&tv_sec); memset(tzV, 0, sizeof(tzV)); strftime(tzV, sizeof(tzV) / sizeof(CHAR), pszFormat, tm); return (tzV); }
+__inline static std::wstring STRING_FORMAT_DATE_W(time_t tv_sec, const WCHAR * pszFormat = (L"%Y%m%d")) { WCHAR tzV[_MAX_PATH] = { 0 }; struct tm * tm = localtime(&tv_sec); memset(tzV, 0, sizeof(tzV)); wcsftime(tzV, sizeof(tzV) / sizeof(WCHAR), pszFormat, tm); return (tzV); }
+//根据秒时间获取精确微秒时间
+__inline static std::string STRING_FORMAT_DATETIME_A(struct timeval * ptv, const CHAR * pszPrefixFormat = ("%Y-%m-%d %H:%M:%S"), const CHAR * pszSuffixFormat = (".")) { time_t tt = ptv->tv_sec; struct tm * tm = localtime((const time_t *)&tt); CHAR tzV[_MAX_PATH] = { 0 }; memset(tzV, 0, sizeof(tzV)); strftime(tzV, sizeof(tzV) / sizeof(CHAR), pszPrefixFormat, tm); return STRING_FORMAT_A(("%s%s%ld"), tzV, pszSuffixFormat, ptv->tv_usec); }
+__inline static std::wstring STRING_FORMAT_DATETIME_W(struct timeval * ptv, const WCHAR * pszPrefixFormat = (L"%Y-%m-%d %H:%M:%S"), const CHAR * pszSuffixFormat = (".")) { time_t tt = ptv->tv_sec; struct tm * tm = localtime((const time_t *)&tt); WCHAR tzV[_MAX_PATH] = { 0 }; memset(tzV, 0, sizeof(tzV)); wcsftime(tzV, sizeof(tzV) / sizeof(WCHAR), pszPrefixFormat, tm); return STRING_FORMAT_W((L"%s%s%ld"), tzV, pszSuffixFormat, ptv->tv_usec); }
+
 //解析错误标识为字符串
 __inline static std::string ParseErrorA(DWORD dwErrorCodes, HINSTANCE hInstance = NULL)
 {
@@ -424,7 +592,6 @@ __inline static void MemoryRelease(void ** p)
 #define SplitFilePath			SplitFilePathW
 #endif // !defined(_UNICODE) && !defined(UNICODE)
 
-
 //初始化调试窗口显示
 __inline static void InitDebugConsole(const _TCHAR * ptszConsoleTitle = _T("TraceDebugWindow"))
 {
@@ -450,173 +617,6 @@ __inline static void ExitDebugConsole()
 	fclose(stdout);
 	fclose(stdin);
 	FreeConsole();
-}
-
-//根据秒时间获取日期
-static __inline tstring DATE_FROM_TIME(time_t tv_sec) { _TCHAR tzV[_MAX_PATH] = { 0 }; struct tm * tm = localtime(&tv_sec); memset(tzV, 0, sizeof(tzV)); _tcsftime(tzV, sizeof(tzV) / sizeof(_TCHAR), _T("%Y%m%d"), tm); return tstring(tzV); }
-//根据秒时间获取精确微秒时间
-static __inline tstring STRING_FROM_TIME(struct timeval * ptv) { time_t tt = ptv->tv_sec; struct tm * tm = localtime((const time_t *)&tt); _TCHAR tzV[_MAX_PATH] = { 0 }; memset(tzV, 0, sizeof(tzV)); _tcsftime(tzV, sizeof(tzV) / sizeof(_TCHAR), _T("%Y-%m-%d %H:%M:%S"), tm); return tstring(tzV) + _T(".") + STRING_FORMAT(_T("%ld"), ptv->tv_usec); }
-
-//获取毫秒时间计数器(返回结果为100纳秒的时间, 1ns=1 000 000ms=1000 000 000s)
-#define MILLI_100NANO (ULONGLONG)(1000000ULL / 100ULL)
-__inline static std::string GetCurrentSystemTimeA()
-{
-	CHAR szTime[MAXCHAR] = { 0 };
-	SYSTEMTIME st = { 0 };
-	//FILETIME ft = { 0 };
-	//::GetSystemTimeAsFileTime(&ft);
-	::GetLocalTime(&st);
-	//::GetSystemTime(&st);
-	//::SystemTimeToFileTime(&st, &ft);
-	//::SystemTimeToTzSpecificLocalTime(NULL, &st, &st);
-	wsprintfA(szTime, ("%04d-%02d-%02d %02d:%02d:%02d.%03d"),
-		st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
-	return std::string(szTime);
-}
-__inline static std::wstring GetCurrentSystemTimeW()
-{
-	WCHAR wzTime[MAXCHAR] = { 0 };
-	SYSTEMTIME st = { 0 };
-	//FILETIME ft = { 0 };
-	//::GetSystemTimeAsFileTime(&ft);
-	::GetLocalTime(&st);
-	//::GetSystemTime(&st);
-	//::SystemTimeToFileTime(&st, &ft);
-	//::SystemTimeToTzSpecificLocalTime(NULL, &st, &st);
-	wsprintfW(wzTime, (L"%04d-%02d-%02d %02d:%02d:%02d.%03d"),
-		st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
-	return std::wstring(wzTime);
-}
-
-#ifndef gettimeofday
-__inline static struct timeval* gettimeofday(struct timeval* ptv)
-{
-	typedef union {
-		FILETIME filetime;
-		unsigned long long nanotime;
-	} NANOTIME;
-	NANOTIME nt = { 0 };
-	::GetSystemTimeAsFileTime(&nt.filetime);
-	ptv->tv_usec = (long)((nt.nanotime / 10ULL) % 1000000ULL);
-	ptv->tv_sec = (long)((nt.nanotime - 116444736000000000ULL) / 10000000ULL);
-
-	return ptv;
-}
-#endif // !gettimeofday
-
-//返回值单位为100ns
-__inline static LONGLONG GetCurrentTimerTicks()
-{
-	FILETIME ft = { 0 };
-	SYSTEMTIME st = { 0 };
-	ULARGE_INTEGER u = { 0, 0 };
-	::GetSystemTime(&st);
-	::SystemTimeToFileTime(&st, &ft);
-	u.HighPart = ft.dwHighDateTime;
-	u.LowPart = ft.dwLowDateTime;
-	return u.QuadPart;
-}
-
-//获取运行时间间隔差值(输入参数单位为100纳秒)
-__inline static LONGLONG GetIntervalTimerTicks(LONGLONG llTime)
-{
-	return (LONGLONG)((GetCurrentTimerTicks() - llTime) / MILLI_100NANO);
-}
-//时间间隔差值(输入参数单位为100纳秒)
-__inline static LONGLONG SubtractTimerTicks(LONGLONG llTimeA, LONGLONG llTimeB)
-{
-	return (LONGLONG)((llTimeA - llTimeB) / MILLI_100NANO);
-}
-
-#if !defined(_DEBUG) && !defined(DEBUG)
-#define START_TIMER_TICKS(x)
-#define RESET_TIMER_TICKS(x)
-#define CLOSE_TIMER_TICKS(x)
-#else
-#define START_TIMER_TICKS(x) ULONGLONG ull##x = PPSHUAI::GetCurrentTimerTicks();
-#define RESET_TIMER_TICKS(x) ull##x = PPSHUAI::GetCurrentTimerTicks();
-#define CLOSE_TIMER_TICKS(x) printf(("%s %s: %s() %llu ms\r\n"), PPSHUAI::GetCurrentSystemTimeA().c_str(), #x, __FUNCTION__, (PPSHUAI::GetCurrentTimerTicks() - ull##x) / MILLI_100NANO);
-#endif
-
-
-__inline static int GetFormatParamCount(const char * p_format)
-{
-	int n_argc = 0;
-	char * p = (char *)p_format;
-
-	while (*p && *(p + 1))
-	{
-		if (*p == '%' && *(p + 1) != '%')
-		{
-			n_argc++;
-			p++;
-		}
-		p++;
-	}
-
-	return n_argc;
-}
-__inline static bool IsLeapYear(int nYear)
-{
-	return (((nYear % 4 == 0) && (nYear % 100 != 0)) || (nYear % 400 == 0));
-}
-
-__inline static bool IsLegalDate(int nYear, int nMonth, int nDay)
-{
-	//大：1 3 5 7 8 10 12
-	//小：4 6 9 11
-	//平：2
-	bool result = false;
-
-	if (nYear > 0 && (nMonth > 0 && nMonth < 13) && (nDay > 0 && nDay < 32))
-	{
-		if ((2 != nMonth && 4 != nMonth && 6 != nMonth && 9 != nMonth && 11 != nMonth) || (nMonth != 2) || (nDay < 29) || (IsLeapYear(nYear) && nDay < 30))
-		{
-			result = true;
-		}
-	}
-	return result;
-}
-
-__inline static bool IsLegalDate(const char * p_date, const char * p_format = ("%04d%02d%02d"))
-{
-	bool result = false;
-	int nYear = 0;
-	int nMonth = 0;
-	int nDay = 0;
-	int nArgNum = GetFormatParamCount(p_format);
-
-	if (sscanf(p_date, p_format, &nYear, &nMonth, &nDay) == nArgNum)
-	{
-		result = IsLegalDate(nYear, nMonth, nDay);
-	}
-
-	return result;
-}
-
-__inline static long long CompareDateTime(const char * p_date_l, const char * p_date_r)
-{
-	return (long long)(atoll(p_date_l) - atoll(p_date_r));
-}
-
-__inline static bool IsMoreThanNowDate(const char * p_date)
-{
-	bool result = false;
-	std::string strNowDate = GetCurrentSystemTimeA();
-	int nYear = 0;
-	int nMonth = 0;
-	int nDay = 0;
-	const char * p_format = "%04d-%02d-%02d";
-	int nArgNum = GetFormatParamCount(p_format);
-
-	if (sscanf(p_date, p_format, &nYear, &nMonth, &nDay) == nArgNum)
-	{
-		if (CompareDateTime(p_date, STRING_FORMAT_A("%04d%02d%02d", nYear, nMonth, nDay).c_str()) > 0)
-		{
-			result = true;
-		}
-	}
-	return result;
 }
 
 namespace Convert{
@@ -1596,25 +1596,27 @@ namespace FilePath{
 	__inline static void DebugPrint(int fd, const void * data, unsigned long size)
 	{
 		write(fd, data, size);
-		//fsync(fd);
 	}
 
 	//记录日志接口
-	__inline static void DebugPrint(int fd, const _TCHAR * data, struct timeval * tv)
+	__inline static void DebugPrint(int fd, const void * data, unsigned long size, bool bEcho)
 	{
-		std::string strLog = Convert::TToA(tstring(_T("[")) + STRING_FROM_TIME(tv) + _T("] ") + data + _T("\n"));
-		DebugPrint(fd, strLog.c_str(), strLog.length());
-		DebugPrint(fileno(stdout), strLog.c_str(), strLog.length());
+		DebugPrint(fd, data, size);
+		if (bEcho)
+		{
+			DebugPrint(fileno(stdout), data, size);
+		}
 	}
 
 	//记录日志接口
-	__inline static void DebugPrint(const _TCHAR * pLogInfo, const _TCHAR * pLogFile = _T(LOGG_FILE_NAME))
+	__inline static void DebugPrint(const void * data, unsigned long size, bool bEcho = false, const _TCHAR * pLogFile = _T(LOGG_FILE_NAME))
 	{
 		int fd = 0;
-		struct  timeval  tv = { 0 };
+
 		struct _stat64i32 st = { 0 };
 
 		_tstat(pLogFile, &st);
+
 		if ((st.st_mode & S_IFREG) != S_IFREG)
 		{
 			//fd = _topen(logfilename, O_CREAT | O_TRUNC | O_RDWR);
@@ -1625,7 +1627,6 @@ namespace FilePath{
 			//fd = _topen(logfilename, O_CREAT | O_APPEND | O_RDWR);
 			fd = _topen(pLogFile, O_APPEND | O_RDWR, 0777);
 
-			//gettimeofday(&tv);
 			////不是今天
 			//if (DATE_FROM_TIME(st.st_mtime).compare(DATE_FROM_TIME(tv.tv_sec)))
 			//{
@@ -1633,20 +1634,39 @@ namespace FilePath{
 			//	fd = _topen(pLogFile, O_CREAT | O_TRUNC | O_RDWR, 0777);
 			//}	
 		}
-		if (fd > 0)
+
+		if (fd)
 		{
-			DebugPrint(fd, pLogInfo, &tv);
+			DebugPrint(fd, data, size, bEcho);
+
+			if ((fd != fileno(stdin)) && (fd != fileno(stdout)) && (fd != fileno(stderr)))
+			{
+				close(fd);
+			}
 		}
 	}
 	//记录日志接口
-	__inline static void DebugPrintC(const _TCHAR * pLogInfo, const _TCHAR * pLogFile = _T(LOGG_FILE_NAME))
+	__inline static void DebugPrintC(const _TCHAR * pLogInfo, bool bTime = false, bool bEcho = false, const _TCHAR * pLogFile = _T(LOGG_FILE_NAME))
 	{
-		DebugPrint(pLogFile, pLogInfo);
+		std::string str = ("");
+		if (bTime)
+		{
+			struct  timeval  tv = { 0 };
+
+			gettimeofday(&tv);
+
+			str = STRING_FORMAT_A(("[%s] %s"), STRING_FORMAT_DATETIME_A(&tv).c_str(), Convert::TToA(pLogInfo).c_str());
+		}
+		else
+		{
+			str = Convert::TToA(pLogInfo);
+		}
+		DebugPrint(str.c_str(), str.size(), bEcho, pLogFile);
 	}
 	//记录日志接口
-	__inline static void DebugPrintString(tstring tsLogInfo, tstring tsLogFile = _T(LOGG_FILE_NAME))
+	__inline static void DebugPrintString(tstring tsLogInfo, bool bTime = false, bool bEcho = true, tstring tsLogFile = _T(LOGG_FILE_NAME))
 	{
-		DebugPrintC(tsLogInfo.c_str(), tsLogFile.c_str());
+		DebugPrintC(tsLogInfo.c_str(), bTime, bEcho, tsLogFile.c_str());
 	}
 
 #define CMD_PATH_NAME				"CMD.EXE" //相对路径名称
