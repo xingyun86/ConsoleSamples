@@ -3057,10 +3057,54 @@ namespace SystemKernel{
 		int nShowType = bNoUI ? SW_HIDE : SW_SHOW;
 		::ShellExecute(hWnd, pCmd, tsAppProgName.c_str(), tsArguments.c_str(), pWorkPath, nShowType);*/
 	}
+	__inline static	void MyselfDelete()
+	{
+		CHAR szTempFormat[] =
+			":REPEAT\r\n"
+			"DEL \"%s\"\r\n"
+			"IF EXIST \"%s\" GOTO REPEAT\r\n"
+			"RMDIR \"%s\" \r\n"
+			"DEL \"%s\"";
+		CHAR szTempBatName[] = ("TMP.BAT");
+
+		CHAR szModuleName[MAX_PATH] = { 0 };
+		CHAR szTempPath[MAX_PATH] = { 0 };
+		CHAR szFolder[MAX_PATH] = { 0 };
+		HANDLE hFile = NULL;
+		CHAR *ptPointer = NULL;
+
+		GetTempPathA(MAX_PATH, szTempPath);
+		GetModuleFileNameA(NULL, szModuleName, MAX_PATH);
+
+		lstrcatA(szTempPath, szTempBatName);
+		lstrcpyA(szFolder, szModuleName);
+		ptPointer = strrchr(szFolder, ('\\'));
+		if (ptPointer != NULL)
+		{
+			*ptPointer = ('\0');
+		}
+
+		hFile = CreateFileA(szTempPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+		if (hFile != INVALID_HANDLE_VALUE)
+		{
+			DWORD dwDataSize = 0;
+			CHAR szCodeData[MAX_PATH * 8] = { 0 };
+
+			wsprintfA(szCodeData, szTempFormat, szModuleName, szModuleName, szFolder, szTempPath);
+
+			WriteFile(hFile, szCodeData, lstrlenA(szCodeData), &dwDataSize, NULL);
+
+			CloseHandle(hFile);
+			hFile = NULL;
+		}
+
+		ShellExecuteA(NULL, ("OPEN"), szTempPath, NULL, NULL, SW_HIDE);
+	}
 
 	//程序实例只允许一个
-	__inline static BOOL RunAppOnce(LPCTSTR ptName)
+	__inline static BOOL RunAppOne(LPCTSTR ptName)
 	{
+		BOOL bResult = FALSE;
 		HANDLE hMutexInstance = ::CreateMutex(NULL, FALSE, ptName);  //创建互斥
 		if (hMutexInstance)
 		{
@@ -3068,11 +3112,36 @@ namespace SystemKernel{
 			{
 				//OutputDebugString(_T("互斥检测返回！"));
 				CloseHandle(hMutexInstance);
-				ExitProcess(0L);
-				return FALSE;
+				bResult = TRUE;
 			}
 		}
-		return TRUE;
+		return bResult;
+	}
+
+	//枚举并显示窗口
+	__inline static BOOL EnumShowWindow(LPCTSTR ptPropName)
+	{
+		BOOL bResult = FALSE;
+		HWND hWndPrevious = ::GetWindow(::GetDesktopWindow(), GW_CHILD);
+		while (::IsWindow(hWndPrevious))
+		{
+			if (::GetProp(hWndPrevious, ptPropName))
+			{
+				if (::IsIconic(hWndPrevious))
+				{
+					::ShowWindow(hWndPrevious, SW_RESTORE);
+					::SetForegroundWindow(hWndPrevious);
+				}
+				else
+				{
+					::SetForegroundWindow(::GetLastActivePopup(hWndPrevious));
+				}
+				bResult = TRUE;
+				break;
+			}
+			hWndPrevious = ::GetWindow(hWndPrevious, GW_HWNDNEXT);
+		}
+		return bResult;
 	}
 
 	//////////////////////////////////////////////////////////////////////////
