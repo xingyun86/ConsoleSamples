@@ -328,9 +328,9 @@ int _tmain(int argc, _TCHAR *argv[])
 	{
 		SHFILEINFO shfi = { 0 };
 		SHGetFileInfo(_T("D:\\DevelopmentEnvironment\\CodeBlocks\\Tools\\Python27\\Google\\Chrome\\Application\\chrome.exe"), 0, &shfi, sizeof(shfi), SHGFI_DISPLAYNAME | SHGFI_ICON);
-		PPSHUAI::TSTRINGVECTOR tv;
+		TSTRINGVECTOR tv;
 
-		PPSHUAI::TSTRINGVECTORMAP tvmap = {
+		TSTRINGVECTORMAP tvmap = {
 			{ _T("进程名称"), tv },
 			{ _T("进程ID"), tv },
 			{ _T("图标文件"), tv },
