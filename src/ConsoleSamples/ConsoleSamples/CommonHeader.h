@@ -4,18 +4,14 @@
 #pragma comment(lib, "shlwapi")
 
 #include <tlhelp32.h>
-
 #include <io.h>
 #include <fcntl.h>
-
 #include <tchar.h>
 #include <sys/stat.h>
-
 #include <map>
 #include <regex>
 #include <vector>
 #include <string>
-
 #include "MACROS.h"
 #include "BASE64.h"
 #include "UNDOCAPI.h"
@@ -620,6 +616,35 @@ __inline static void ExitDebugConsole()
 }
 
 namespace Convert{
+#ifdef HAVE_LIBICONV_H
+#include <iconv.h>
+#pragma comment (lib, "libiconv.lib")
+#pragma comment (lib, "libcharset.lib")
+	__inline static int codeset_convert(char *from_charset, char *to_charset, const char *inbuf, size_t inlen, char *outbuf, size_t outlen)
+	{
+		const char **pin = &inbuf;
+		char **pout = &outbuf;
+
+		iconv_t cd = iconv_open(to_charset, from_charset);
+		if (cd == 0) return -1;
+		memset(outbuf, 0, outlen);
+		if (iconv(cd, (char **)pin, &inlen, pout, &outlen) == -1) return -1;
+		iconv_close(cd);
+		return 0;
+	}
+
+	/* UTF-8 to GBK  */
+	__inline static int u2g(const char *inbuf, size_t inlen, char *outbuf, size_t outlen)
+	{
+		return codeset_convert("UTF-8", "GBK", inbuf, inlen, outbuf, outlen);
+	}
+
+	/* GBK to UTF-8 */
+	__inline static int g2u(const char *inbuf, size_t inlen, char *outbuf, size_t outlen)
+	{
+		return codeset_convert("GBK", "UTF-8", inbuf, inlen, outbuf, outlen);
+	}
+#endif
 	//	ANSI to Unicode
 	__inline static std::wstring ANSIToUnicode(const std::string str)
 	{
@@ -958,7 +983,7 @@ namespace Convert{
 	{
 		return UnicodeToANSI(UTF8ToUnicode(str));
 	}
-
+	
 	__inline static TSTRING VarChangeToStr(VARIANT var)
 	{
 		TSTRING t = _T("");
@@ -1698,7 +1723,7 @@ namespace String{
 				data.resize(data.size() + DATA_BASE_SIZE);
 				size += fread((void *)(data.c_str() + data.size() - DATA_BASE_SIZE), sizeof(char), DATA_BASE_SIZE, pF);
 			}
-			data.resize(size);
+			
 			fclose(pF);
 			pF = 0;
 		}
