@@ -1692,7 +1692,7 @@ namespace String{
 				data.resize(data.size() + DATA_BASE_SIZE);
 				size += fread((void *)(data.c_str() + data.size() - DATA_BASE_SIZE), sizeof(char), DATA_BASE_SIZE, pF);
 			}
-			
+			data.resize(size);
 			fclose(pF);
 			pF = 0;
 		}
