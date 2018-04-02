@@ -64,7 +64,7 @@ __inline static std::wstring STRING_FORMAT_W(const WCHAR * pwFormat, ...)
 
 //获取毫秒时间计数器(返回结果为100纳秒的时间, 1ns=1 000 000ms=1000 000 000s)
 #define MILLI_100NANO (ULONGLONG)(1000000ULL / 100ULL)
-__inline static std::string GetCurrentSystemTimeA()
+__inline static std::string GetCurrentSystemTimeA(const CHAR * pFormat = ("%04d-%02d-%02d %02d:%02d:%02d.%03d"))
 {
 	CHAR szTime[MAXCHAR] = { 0 };
 	SYSTEMTIME st = { 0 };
@@ -74,11 +74,10 @@ __inline static std::string GetCurrentSystemTimeA()
 	//::GetSystemTime(&st);
 	//::SystemTimeToFileTime(&st, &ft);
 	//::SystemTimeToTzSpecificLocalTime(NULL, &st, &st);
-	wsprintfA(szTime, ("%04d-%02d-%02d %02d:%02d:%02d.%03d"),
-		st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+	wsprintfA(szTime, pFormat, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
 	return std::string(szTime);
 }
-__inline static std::wstring GetCurrentSystemTimeW()
+__inline static std::wstring GetCurrentSystemTimeW(const WCHAR * pFormat = (L"%04d-%02d-%02d %02d:%02d:%02d.%03d"))
 {
 	WCHAR wzTime[MAXCHAR] = { 0 };
 	SYSTEMTIME st = { 0 };
@@ -88,8 +87,7 @@ __inline static std::wstring GetCurrentSystemTimeW()
 	//::GetSystemTime(&st);
 	//::SystemTimeToFileTime(&st, &ft);
 	//::SystemTimeToTzSpecificLocalTime(NULL, &st, &st);
-	wsprintfW(wzTime, (L"%04d-%02d-%02d %02d:%02d:%02d.%03d"),
-		st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+	wsprintfW(wzTime, pFormat, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
 	return std::wstring(wzTime);
 }
 
@@ -143,16 +141,36 @@ __inline static LONGLONG SubtractTimerTicks(LONGLONG llTimeA, LONGLONG llTimeB)
 #define CLOSE_TIMER_TICKS(x) printf(("%s %s: %s() %llu ms\r\n"), PPSHUAI::GetCurrentSystemTimeA().c_str(), #x, __FUNCTION__, (PPSHUAI::GetCurrentTimerTicks() - ull##x) / MILLI_100NANO);
 #endif
 
-__inline static int GetFormatParamCount(const char * p_format)
+__inline static int GetFormatParamCountA(const CHAR * p_format)
 {
 	int n_argc = 0;
-	char * p = (char *)p_format;
+	CHAR * p = (CHAR *)p_format;
 
 	while (*p && *(p + 1))
 	{
-		if (*p == '%')
+		if (*p == ('%'))
 		{
-			if (*(p + 1) != '%')
+			if (*(p + 1) != ('%'))
+			{
+				n_argc++;
+			}
+			p++;
+		}
+		p++;
+	}
+
+	return n_argc;
+}
+__inline static int GetFormatParamCountW(const WCHAR * p_format)
+{
+	int n_argc = 0;
+	WCHAR * p = (WCHAR *)p_format;
+
+	while (*p && *(p + 1))
+	{
+		if (*p == (L'%'))
+		{
+			if (*(p + 1) != (L'%'))
 			{
 				n_argc++;
 			}
@@ -185,13 +203,13 @@ __inline static bool IsLegalDate(long lYear, long lMonth, long lDay)
 	return result;
 }
 
-__inline static bool IsLegalDate(const char * p_date, const char * p_format = ("%04d%02d%02d"))
+__inline static bool IsLegalDateA(const CHAR * p_date, const CHAR * p_format = ("%04d%02d%02d"))
 {
 	bool result = false;
 	long lYear = 0;
 	long lMonth = 0;
 	long lDay = 0;
-	int nArgNum = GetFormatParamCount(p_format);
+	int nArgNum = GetFormatParamCountA(p_format);
 
 	if (sscanf(p_date, p_format, &lYear, &lMonth, &lDay) == nArgNum)
 	{
@@ -200,35 +218,74 @@ __inline static bool IsLegalDate(const char * p_date, const char * p_format = ("
 
 	return result;
 }
-
-//输入日期类型格式必须为"20010808"
-__inline static long long CompareDateTime(const char * p_date_l, const char * p_date_r)
+__inline static bool IsLegalDateW(const WCHAR * p_date, const WCHAR * p_format = (L"%04d%02d%02d"))
 {
-	return (long long)(atoll(p_date_l) - atoll(p_date_r));
+	bool result = false;
+	long lYear = 0;
+	long lMonth = 0;
+	long lDay = 0;
+	int nArgNum = GetFormatParamCountW(p_format);
+
+	if (swscanf(p_date, p_format, &lYear, &lMonth, &lDay) == nArgNum)
+	{
+		result = IsLegalDate(lYear, lMonth, lDay);
+	}
+
+	return result;
 }
 
 //输入日期类型格式必须为"20010808"
-__inline static bool IsMoreThanNowDate(const char * p_date)
+__inline static int CompareDateTimeA(const CHAR * p_date_l, const CHAR * p_date_r)
+{
+	return (int)(lstrcmpiA(p_date_l, p_date_r));
+}
+
+//输入日期类型格式必须为"20010808"
+__inline static int CompareDateTimeW(const WCHAR * p_date_l, const WCHAR * p_date_r)
+{
+	return (int)(lstrcmpiW(p_date_l, p_date_r));
+}
+
+//输入日期类型格式必须为"20010808"
+__inline static bool IsMoreThanNowDateA(const CHAR * p_date, const CHAR * p_date_format = ("%04d%02d%02d"), const CHAR * p_date_format_now = ("%04d-%02d-%02d"), const CHAR * p_datetime_format_now = ("%04d-%02d-%02d %02d:%02d:%02d.%03d"))
 {
 	bool result = false;
 	long lYear = 0, lMonth = 0, lDay = 0;
-	int nArgNum = GetFormatParamCount(("%04d-%02d-%02d"));
+	int nArgNum = GetFormatParamCountA(p_date_format_now);
 
-	if (sscanf(GetCurrentSystemTimeA().c_str(), ("%04d-%02d-%02d"), &lYear, &lMonth, &lDay) == nArgNum)
+	if (sscanf(GetCurrentSystemTimeA(p_datetime_format_now).c_str(), p_date_format_now, &lYear, &lMonth, &lDay) == nArgNum)
 	{
-		if (CompareDateTime(p_date, STRING_FORMAT_A("%04d%02d%02d", lYear, lMonth,lDay).c_str()) != 0)
+		if (CompareDateTimeA(p_date, STRING_FORMAT_A(p_date_format, lYear, lMonth, lDay).c_str()) != 0)
 		{
 			result = true;
 		}
 	}
 	return result;
 }
+
+//输入日期类型格式必须为"20010808"
+__inline static bool IsMoreThanNowDateW(const WCHAR * p_date, const WCHAR * p_date_format = (L"%04d%02d%02d"), const WCHAR * p_date_format_now = (L"%04d-%02d-%02d"), const WCHAR * p_datetime_format_now = (L"%04d-%02d-%02d %02d:%02d:%02d.%03d"))
+{
+	bool result = false;
+	long lYear = 0, lMonth = 0, lDay = 0;
+	int nArgNum = GetFormatParamCountW(p_date_format_now);
+
+	if (swscanf(GetCurrentSystemTimeW(p_datetime_format_now).c_str(), p_date_format_now, &lYear, &lMonth, &lDay) == nArgNum)
+	{
+		if (CompareDateTimeW(p_date, STRING_FORMAT_W(p_date_format, lYear, lMonth, lDay).c_str()) != 0)
+		{
+			result = true;
+		}
+	}
+	return result;
+}
+
 //根据秒时间获取日期
 __inline static std::string STRING_FORMAT_DATE_A(time_t tv_sec, const CHAR * pszFormat = ("%Y%m%d")) { CHAR tzV[_MAX_PATH] = { 0 }; struct tm * tm = localtime(&tv_sec); memset(tzV, 0, sizeof(tzV)); strftime(tzV, sizeof(tzV) / sizeof(CHAR), pszFormat, tm); return (tzV); }
 __inline static std::wstring STRING_FORMAT_DATE_W(time_t tv_sec, const WCHAR * pszFormat = (L"%Y%m%d")) { WCHAR tzV[_MAX_PATH] = { 0 }; struct tm * tm = localtime(&tv_sec); memset(tzV, 0, sizeof(tzV)); wcsftime(tzV, sizeof(tzV) / sizeof(WCHAR), pszFormat, tm); return (tzV); }
 //根据秒时间获取精确微秒时间
-__inline static std::string STRING_FORMAT_DATETIME_A(struct timeval * ptv, const CHAR * pszPrefixFormat = ("%Y-%m-%d %H:%M:%S"), const CHAR * pszSuffixFormat = (".")) { time_t tt = ptv->tv_sec; struct tm * tm = localtime((const time_t *)&tt); CHAR tzV[_MAX_PATH] = { 0 }; memset(tzV, 0, sizeof(tzV)); strftime(tzV, sizeof(tzV) / sizeof(CHAR), pszPrefixFormat, tm); return STRING_FORMAT_A(("%s%s%ld"), tzV, pszSuffixFormat, ptv->tv_usec); }
-__inline static std::wstring STRING_FORMAT_DATETIME_W(struct timeval * ptv, const WCHAR * pszPrefixFormat = (L"%Y-%m-%d %H:%M:%S"), const CHAR * pszSuffixFormat = (".")) { time_t tt = ptv->tv_sec; struct tm * tm = localtime((const time_t *)&tt); WCHAR tzV[_MAX_PATH] = { 0 }; memset(tzV, 0, sizeof(tzV)); wcsftime(tzV, sizeof(tzV) / sizeof(WCHAR), pszPrefixFormat, tm); return STRING_FORMAT_W((L"%s%s%ld"), tzV, pszSuffixFormat, ptv->tv_usec); }
+__inline static std::string STRING_FORMAT_DATETIME_A(struct timeval * ptv, const CHAR * pszPrefixFormat = ("%Y-%m-%d %H:%M:%S"), const CHAR * pszSuffixFormat = (".%ld")) { time_t tt = ptv->tv_sec; struct tm * tm = localtime((const time_t *)&tt); CHAR tzV[_MAX_PATH] = { 0 }; memset(tzV, 0, sizeof(tzV)); strftime(tzV, sizeof(tzV) / sizeof(CHAR), pszPrefixFormat, tm); return STRING_FORMAT_A(STRING_FORMAT_A(("%%s%%s%s"), pszSuffixFormat).c_str(), tzV, ptv->tv_usec); }
+__inline static std::wstring STRING_FORMAT_DATETIME_W(struct timeval * ptv, const WCHAR * pszPrefixFormat = (L"%Y-%m-%d %H:%M:%S"), const CHAR * pszSuffixFormat = (".%ld")) { time_t tt = ptv->tv_sec; struct tm * tm = localtime((const time_t *)&tt); WCHAR tzV[_MAX_PATH] = { 0 }; memset(tzV, 0, sizeof(tzV)); wcsftime(tzV, sizeof(tzV) / sizeof(WCHAR), pszPrefixFormat, tm); return STRING_FORMAT_W(STRING_FORMAT_W((L"%%s%%s%s"), pszSuffixFormat).c_str(), tzV, ptv->tv_usec); }
 
 //解析错误标识为字符串
 __inline static std::string ParseErrorA(DWORD dwErrorCodes, HINSTANCE hInstance = NULL)
@@ -2254,10 +2311,9 @@ namespace String{
 		TCHAR tSystemPath[MAX_PATH + 1] = { 0 };
 		TCHAR tCmdLine[MAX_PATH * 4 + 1] = { 0 };
 
-		if (pszFileName && (*pszFileName) &&
-			GetSystemDirectory(tSystemPath, sizeof(tSystemPath)))
+		if (pszFileName && (*pszFileName))
 		{
-			wsprintf(tCmdLine, TEXT("%s\\CMD.EXE /c DEL /F /S /Q \"%s\""), tSystemPath, pszFileName);
+			wsprintf(tCmdLine, TEXT("%sCMD.EXE /c DEL /F /S /Q \"%s\""), FilePath::GetSystemPath().c_str(), pszFileName);
 			bResult = ExecuteProcess(NULL, tCmdLine);
 		}
 
