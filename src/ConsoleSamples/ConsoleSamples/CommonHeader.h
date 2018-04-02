@@ -2,6 +2,8 @@
 #include <windows.h>
 #include <shlwapi.h>
 #pragma comment(lib, "shlwapi")
+#include <shellapi.h>
+#pragma comment(lib, "shell32")
 
 #include <tlhelp32.h>
 #include <io.h>
